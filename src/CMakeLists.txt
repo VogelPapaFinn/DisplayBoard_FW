@@ -4,10 +4,6 @@ set(FILES
         # Start of Application
         "main.c"
 
-        # Communication Center
-        "../include/ComCenter.h"
-        "ComCenter.c"
-
         # GUI
         "../include/GUI.h"
         "GUI.c"
@@ -25,5 +21,5 @@ set(FILES
 )
 
 idf_component_register(SRCS ${FILES}
-        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_lcd_gc9a01 esp_wifi nvs_flash can logger
+        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_lcd_gc9a01 esp_wifi nvs_flash can logger statemachine
         INCLUDE_DIRS "../include/")

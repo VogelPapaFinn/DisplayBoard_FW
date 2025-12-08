@@ -1,8 +1,5 @@
 #pragma once
 
-// Project includes
-#include "Logger.h"
-
 // FreeRTOS include
 #include "freertos/FreeRTOS.h"
 
@@ -18,14 +15,24 @@ extern QueueHandle_t mainEventQueue;
 //! \brief The HW UUID
 extern uint8_t HW_UUID;
 
+//! \brief The ID assigned by the SensorBoard
+extern uint8_t COM_ID;
+
+typedef enum
+{
+	STATE_INIT,
+	STATE_REGISTRATION,
+	STATE_OPERATION,
+} State_t;
+
 //! \brief A typedef enum that contains commands for all Queues
 typedef enum
 {
-	QUEUE_CMD_MAIN_REGISTER_UUID,
-	QUEUE_CMD_MAIN_RESET,
+	/* CAN */
+	QUEUE_RECEIVED_NEW_CAN_MESSAGE,
+
+	/* GUI */
 	QUEUE_CMD_GUI_NEW_SENSOR_DATA,
-	QUEUE_CMD_MAIN_ENTER_UPDATE_MODE,
-	QUEUE_CMD_MAIN_RETURN_FW_VERSION
 } QUEUE_COMMAND_T;
 
 //! \brief A typedef struct which is used in the event Queues

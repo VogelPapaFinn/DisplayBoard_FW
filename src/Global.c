@@ -1,5 +1,6 @@
 // Project includes
 #include "Global.h"
+#include "logger.h"
 
 QueueHandle_t guiEventQueue = NULL;
 

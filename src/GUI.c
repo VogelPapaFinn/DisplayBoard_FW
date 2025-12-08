@@ -146,7 +146,7 @@ void IRAM_ATTR handleGuiEventQueueTask()
 			switch (queueEvent.command) {
 				case QUEUE_CMD_GUI_NEW_SENSOR_DATA:
 					// Get the message
-					uint8_t* msg = queueEvent.canFrame.buffer;
+					const uint8_t* msg = queueEvent.canFrame.buffer;
 
 					// Get the speed
 					const uint8_t speed = *msg;
@@ -185,7 +185,8 @@ void IRAM_ATTR handleGuiEventQueueTask()
 					guiSetRightBlinkerActive(rightIndicator);
 
 					break;
-				default: break;
+				default:
+					break;
 			}
 		}
 	}
@@ -209,7 +210,9 @@ bool initDisplay(void)
 
 	// Then attach it to the SPI bus
 	if (esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)GUI_LCD_SPI_HOST, &lcdPanel1IoConfig, &lcdPanelIoHandle_) !=
-		ESP_OK) { return false; }
+		ESP_OK) {
+		return false;
+	}
 
 	// Then create the panel config
 	const esp_lcd_panel_dev_config_t lcdPanelConfig = {
@@ -279,7 +282,7 @@ bool initLvgl(void)
 	lv_display_set_color_format(display_, LV_COLOR_FORMAT_RGB565);
 
 	// Rotate the display
-	//lv_display_set_rotation(display3_, LV_DISPLAY_ROTATION_180);
+	// lv_display_set_rotation(display3_, LV_DISPLAY_ROTATION_180);
 
 	// Set the callback function, to draw to the physical displays
 	lv_display_set_flush_cb(display_, flushToDisplay);
@@ -511,7 +514,7 @@ bool guiInit(void)
 		.miso_io_num = -1,
 		.quadwp_io_num = -1,
 		.quadhd_io_num = -1,
-		.max_transfer_sz = SOC_SPI_MAXIMUM_BUFFER_SIZE //TEST_LCD_H_RES * 80 * sizeof(uint16_t),
+		.max_transfer_sz = SOC_SPI_MAXIMUM_BUFFER_SIZE // TEST_LCD_H_RES * 80 * sizeof(uint16_t),
 	};
 
 	// Check SPI bus initialization
@@ -554,7 +557,8 @@ bool guiInit(void)
 	// Build the screens and put them on the display
 	createAndShowTempScreen(display_);
 
-	// Then start the lvgl task handler task on core 0 - on core 1 the application crashes in the createAndShowTempScreen function
+	// Then start the lvgl task handler task on core 0 - on core 1 the application crashes in the
+	// createAndShowTempScreen function
 	if (xTaskCreate(updateLvglTask, "updateLvglTask", 10000, NULL, 0, NULL) != pdPASS) {
 		// Logging
 		loggerCritical("Failed to create task: \"updateLvglTask\"!");
