@@ -153,10 +153,9 @@ void IRAM_ATTR handleGuiEventQueueTask()
 					guiSetSpeed(speed);
 
 					// Get the RPM
-					msg++;
-					uint16_t rpm = *msg << 8;
-					msg++;
-					rpm += *msg;
+					const uint16_t lowerRpmByte = *(++msg);
+					const uint16_t upperRpmByte = *(++msg) << 8;
+					const uint16_t rpm = lowerRpmByte + upperRpmByte;
 					guiSetRpm(rpm);
 
 					// Get the fuel level

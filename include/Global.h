@@ -12,11 +12,12 @@ extern QueueHandle_t guiEventQueue;
 //! \brief The Queue used to send events to the main application (main.c)
 extern QueueHandle_t mainEventQueue;
 
-//! \brief The HW UUID
-extern uint8_t HW_UUID;
-
 //! \brief The ID assigned by the SensorBoard
 extern uint8_t COM_ID;
+
+//! \brief The HW MAC address of the chip. [0] contains the part that changes rarely
+//! [5] contains the part that changes often.
+extern uint8_t MAC_ADDRESS[6];
 
 typedef enum
 {
