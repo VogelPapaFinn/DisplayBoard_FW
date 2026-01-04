@@ -1,5 +1,8 @@
 #include "Screens/LvglTemperatureScreen.h"
 
+// C includes
+#include <string.h>
+
 // LVGL include
 #include "lvgl.h"
 
@@ -21,7 +24,7 @@ typedef struct
 	lv_style_t fuelLevelLabelStyle;
 	int lastFuelInPercent;
 	char waterTemp[4];
-	char fuelLevelP[4];
+	char fuelLevelP[5];
 	char fuelLevelL[5];
 } TempScreen_t;
 
@@ -167,5 +170,54 @@ void guiDestroyTemperatureScreen()
 {
 	if (g_instance != NULL) {
 		free(g_instance);
+	}
+}
+void guiSetWaterTemp(const uint8_t temp, const SemaphoreHandle_t* p_guiSemaphore)
+{
+	if (g_instance == NULL) {
+		return;
+	}
+
+	if (xSemaphoreTake(*p_guiSemaphore, portMAX_DELAY) == pdTRUE) {
+		// Clear the old text
+		memset(&g_instance->waterTemp, ' ', sizeof(g_instance->waterTemp));
+
+		// Set the text
+		snprintf(g_instance->waterTemp, sizeof(g_instance->waterTemp), "%d", temp);
+
+		// Apply it to the label
+		lv_label_set_text(g_instance->tempLabel, g_instance->waterTemp);
+
+		xSemaphoreGive(*p_guiSemaphore);
+	}
+}
+
+void guiSetFuelLevel(const uint8_t levelInPercent, const SemaphoreHandle_t* p_guiSemaphore)
+{
+	if (g_instance == NULL) {
+		return;
+	}
+
+	if (xSemaphoreTake(*p_guiSemaphore, portMAX_DELAY) == pdTRUE) {
+		// Clear the old text
+		memset(&g_instance->fuelLevelP, ' ', sizeof(g_instance->fuelLevelP));
+		memset(&g_instance->fuelLevelL, ' ', sizeof(g_instance->fuelLevelL));
+
+		// Set the text
+		snprintf(g_instance->fuelLevelP, sizeof(g_instance->fuelLevelP), "%d%%", levelInPercent);
+
+		// Special case if levelInPercent is 0
+		if (levelInPercent == 0) {
+			snprintf(g_instance->fuelLevelL, sizeof(g_instance->fuelLevelL), "%dL", 0);
+		} else {
+			snprintf(g_instance->fuelLevelL, sizeof(g_instance->fuelLevelL), "%dL",
+					 (uint8_t)(50 / levelInPercent));
+		}
+
+		// Apply the text to the labels
+		lv_label_set_text(g_instance->fuelLevelInLitreLabel, g_instance->fuelLevelL);
+		lv_label_set_text(g_instance->fuelLevelInPercentLabel, g_instance->fuelLevelP);
+
+		xSemaphoreGive(*p_guiSemaphore);
 	}
 }

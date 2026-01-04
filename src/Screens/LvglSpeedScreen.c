@@ -1,5 +1,8 @@
 #include "Screens/LvglSpeedScreen.h"
 
+// C includes
+#include <string.h>
+
 // LVGL include
 #include "lvgl.h"
 
@@ -108,5 +111,43 @@ void guiDestroySpeedScreen()
 {
 	if (g_instance != NULL) {
 		free(g_instance);
+	}
+}
+void guiSetSpeed(const uint8_t speedKmh, const SemaphoreHandle_t* p_guiSemaphore)
+{
+	if (g_instance == NULL) {
+		return;
+	}
+
+	if (xSemaphoreTake(*p_guiSemaphore, portMAX_DELAY) == pdTRUE) {
+		// Clear the old text
+		memset(&g_instance->speed, ' ', sizeof(g_instance->speed));
+
+		// Set the text
+		snprintf(g_instance->speed, sizeof(g_instance->speed), "%d", speedKmh);
+
+		// Apply it to the label
+		lv_label_set_text(g_instance->speedLabel, g_instance->speed);
+
+		xSemaphoreGive(*p_guiSemaphore);
+	}
+}
+
+void guiSetRightIndicatorActive(const bool active, const SemaphoreHandle_t* p_guiSemaphore)
+{
+	if (g_instance == NULL) {
+		return;
+	}
+
+	if (xSemaphoreTake(*p_guiSemaphore, portMAX_DELAY) == pdTRUE) {
+		if (active) {
+			// Activate the indicator visually
+			lv_obj_set_style_opa(g_instance->rightIndicator, LV_OPA_100, LV_PART_MAIN);
+		} else {
+			// Deactivate the indicator visually
+			lv_obj_set_style_opa(g_instance->rightIndicator, LV_OPA_20, LV_PART_MAIN);
+		}
+
+		xSemaphoreGive(*p_guiSemaphore);
 	}
 }

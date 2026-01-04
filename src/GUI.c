@@ -119,6 +119,38 @@ void lvglUpdateTask(void* p_params)
 	}
 }
 
+void guiEventQueueTask()
+{
+	QueueEvent_t queueEvent;
+	while (true) {
+		// Wait until we get a new event
+		if (xQueueReceive(g_guiEventQueue, &queueEvent, portMAX_DELAY)) {
+			switch (queueEvent.command) {
+				case DISPLAY_TEMPERATURE_SCREEN:
+					{
+						guiDisplayScreen(SCREEN_TEMPERATURE);
+						break;
+					}
+				case DISPLAY_SPEED_SCREEN:
+					{
+						guiDisplayScreen(SCREEN_SPEED);
+						break;
+					}
+				case DISPLAY_RPM_SCREEN:
+					{
+						guiDisplayScreen(SCREEN_RPM);
+						break;
+					}
+				case NEW_SENSOR_DATA:
+					handleNewSensorData(&queueEvent);
+					break;
+				default:
+					break;
+			}
+		}
+	}
+}
+
 /*
  *	Private functions
  */
@@ -242,34 +274,6 @@ bool initLvgl()
 	return true;
 }
 
-void IRAM_ATTR guiEventQueueTask()
-{
-	QueueEvent_t queueEvent;
-	while (true) {
-		// Wait until we get a new event
-		if (xQueueReceive(g_guiEventQueue, &queueEvent, portMAX_DELAY)) {
-			switch (queueEvent.command) {
-				case DISPLAY_TEMPERATURE_SCREEN:
-				{
-					guiDisplayScreen(SCREEN_TEMPERATURE);
-					break;
-				}
-				case DISPLAY_SPEED_SCREEN:
-				{
-					guiDisplayScreen(SCREEN_SPEED);
-					break;
-				}
-				case DISPLAY_RPM_SCREEN:
-				{
-					guiDisplayScreen(SCREEN_RPM);
-					break;
-				}
-				default: break;
-			}
-		}
-	}
-}
-
 void handleNewSensorData(const QueueEvent_t* p_queueEvent)
 {
 	if (p_queueEvent == NULL || p_queueEvent->canFrame.buffer == NULL || g_currentScreen == SCREEN_UNKNOWN) {
@@ -286,18 +290,42 @@ void handleNewSensorData(const QueueEvent_t* p_queueEvent)
 	switch (g_currentScreen) {
 		case SCREEN_TEMPERATURE:
 			{
-				// Get the temperature
+				// Set the temperature
 				const uint8_t waterTemp = *(frameBuffer + 4);
+				guiSetWaterTemp(waterTemp, &g_lvglGuiSemaphore);
 
-				// Get the fuel level in %
+				// Set the fuel level in %
 				const uint8_t fuelLevel = *(frameBuffer + 3);
+				guiSetFuelLevel(fuelLevel, &g_lvglGuiSemaphore);
 
 				break;
 			}
 		case SCREEN_SPEED:
-			break;
+			{
+				// Set the speed
+				const uint8_t speedKmh = *(frameBuffer + 0);
+				guiSetSpeed(speedKmh, &g_lvglGuiSemaphore);
+
+				// Get the status of the right indicator
+				const bool indicatorActive = *(frameBuffer + 7);
+				guiSetRightIndicatorActive((bool)indicatorActive, &g_lvglGuiSemaphore);
+
+				break;
+			}
 		case SCREEN_RPM:
-			break;
+			{
+				// Set the rpm
+				const uint16_t lowerRpmByte = *(frameBuffer + 2);
+				const uint16_t upperRpmByte = *(frameBuffer + 1) << 8;
+				const uint16_t rpm = lowerRpmByte + upperRpmByte;
+				guiSetRpm(rpm, &g_lvglGuiSemaphore);
+
+				// Get the status of the left indicator
+				const bool indicatorActive = *(frameBuffer + 6);
+				guiSetLeftIndicatorActive((bool)indicatorActive, &g_lvglGuiSemaphore);
+
+				break;
+			}
 		default:
 			ESP_LOGE("GUI", "Currently displaying an invalid screen. Couldn't update data");
 			break;
@@ -361,6 +389,7 @@ bool guiDisplayScreen(const Screen_t screen)
 	}
 
 	// Create the screen and show it
+	g_currentScreen = screen;
 	switch (screen) {
 		case SCREEN_TEMPERATURE:
 			return guiCreateAndShowTemperatureScreen(&g_lvglGuiSemaphore);

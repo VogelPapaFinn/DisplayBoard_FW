@@ -1,5 +1,8 @@
 #include "Screens/LvglRpmScreen.h"
 
+// C includes
+#include <string.h>
+
 // LVGL include
 #include "lvgl.h"
 
@@ -14,7 +17,7 @@ typedef struct
 	lv_obj_t* rpmTitleLabel;
 	lv_style_t rpmTitleStyle;
 	lv_obj_t* leftIndicator;
-	char rpm[6];
+	char rpm[7];
 } RpmScreen_t;
 
 /*
@@ -108,5 +111,44 @@ void guiDestroyRpmScreen()
 {
 	if (g_instance != NULL) {
 		free(g_instance);
+	}
+}
+
+void guiSetRpm(const uint16_t rpm, const SemaphoreHandle_t* p_guiSemaphore)
+{
+	if (g_instance == NULL) {
+		return;
+	}
+
+	if (xSemaphoreTake(*p_guiSemaphore, portMAX_DELAY) == pdTRUE) {
+		// Clear the old text
+		memset(&g_instance->rpm, ' ', sizeof(g_instance->rpm));
+
+		// Set the text
+		snprintf(g_instance->rpm, sizeof(g_instance->rpm), "%d", rpm);
+
+		// Apply it to the label
+		lv_label_set_text(g_instance->rpmLabel, g_instance->rpm);
+
+		xSemaphoreGive(*p_guiSemaphore);
+	}
+}
+
+void guiSetLeftIndicatorActive(const bool active, const SemaphoreHandle_t* p_guiSemaphore)
+{
+	if (g_instance == NULL) {
+		return;
+	}
+
+	if (xSemaphoreTake(*p_guiSemaphore, portMAX_DELAY) == pdTRUE) {
+		if (active) {
+			// Activate the indicator visually
+			lv_obj_set_style_opa(g_instance->leftIndicator, LV_OPA_100, LV_PART_MAIN);
+		} else {
+			// Deactivate the indicator visually
+			lv_obj_set_style_opa(g_instance->leftIndicator, LV_OPA_20, LV_PART_MAIN);
+		}
+
+		xSemaphoreGive(*p_guiSemaphore);
 	}
 }
