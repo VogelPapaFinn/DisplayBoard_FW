@@ -1,6 +1,6 @@
 // Project includes
 #include "GUI.h"
-#include "Global.h"
+#include "EventQueues.h"
 #include "can.h"
 #include "statemachine.h"
 
@@ -8,55 +8,115 @@
 #include "freertos/FreeRTOS.h"
 
 // espidf includes
+#include <esp_log.h>
 #include <esp_mac.h>
+
+/*
+ *	Defines
+ */
+#define MAC_ADDRESS_LENGTH 6
+
+/*
+ *	Private typedefs
+ */
+typedef enum
+{
+	STATE_INIT,
+	STATE_REGISTRATION,
+	STATE_OPERATION,
+} State_t;
 
 /*
  *	Prototypes
  */
-void sendHwUUID();
 
-// The COM ID
-uint8_t COM_ID;
+/*
+ *	External Variables
+ */
+uint8_t g_ownCanComId = 0;
 
+/*
+ *	Private variables
+ */
 // The MAC address
-uint8_t MAC_ADDRESS[6];
+uint8_t g_macAddress[MAC_ADDRESS_LENGTH];
 
-void app_main(void)
+/*
+ *	Helper functions
+*/
+void getMacAddress()
 {
 	// Get the WiFi MAC address
-	esp_read_mac(MAC_ADDRESS, ESP_MAC_WIFI_STA);
+	esp_read_mac(g_macAddress, ESP_MAC_WIFI_STA);
+}
 
+void buildCanComId()
+{
 	// Generate the initial COM_ID
-	COM_ID = 0x00;
-	COM_ID += MAC_ADDRESS[3] << 16;
-	COM_ID += MAC_ADDRESS[4] << 8;
-	COM_ID += MAC_ADDRESS[5];
+	g_ownCanComId = 0x00;
+	g_ownCanComId += g_macAddress[3] << 16;
+	g_ownCanComId += g_macAddress[4] << 8;
+	g_ownCanComId += g_macAddress[5];
 	// ID 0x00 is reserved for the master
-	if (COM_ID == 0x00) {
-		COM_ID = 0x01;
+	if (g_ownCanComId == 0x00) {
+		g_ownCanComId++;
 	}
+}
+
+void broadcastUuid()
+{
+	// Create the CAN frame buffer
+	uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * 6);
+	buffer[0] = g_macAddress[0];
+	buffer[1] = g_macAddress[1];
+	buffer[2] = g_macAddress[2];
+	buffer[3] = g_macAddress[3];
+	buffer[4] = g_macAddress[4];
+	buffer[5] = g_macAddress[5];
+
+	// Create the CAN frame
+	twai_frame_t* frame = generateCanFrame(CAN_MSG_REGISTRATION, g_ownCanComId, &buffer, sizeof(uint8_t) * 6);
+
+	// Send the frame
+	queueCanBusMessage(frame, true, false);
+
+	// Logging
+	ESP_LOGI("main", "Sent HW UUID '%d-%d-%d-%d-%d-%d' to Sensor Board!", g_macAddress[0], g_macAddress[1], g_macAddress[2],
+			   g_macAddress[3], g_macAddress[4], g_macAddress[5]);
+}
+
+/*
+ *	Main function
+ */
+void app_main(void) // NOLINT
+{
+	// Get the MAC address
+	getMacAddress();
+
+	// Get the initial CAN com id
+	buildCanComId();
 
 	// Create the event queues
 	createEventQueues();
 
-	// Initialize the can node
-	twai_node_handle_t* canNodeHandle = initializeCanNode(GPIO_NUM_9, GPIO_NUM_6);
+	// Initialize and enable the can node
+	initializeCanNode(GPIO_NUM_9, GPIO_NUM_6);
 	enableCanNode();
 
-	// Init the GUI
+	// Register the queue to the CAN bus
+	registerCanRxCbQueue(&g_mainEventQueue);
+
+	// Initialize the GUI
 	guiInit();
 
-	// Register the queue to the CAN bus
-	registerCanRxCbQueue(&mainEventQueue);
-
 	// Broadcast the HW UUID once on startup
-	sendHwUUID();
+	broadcastUuid();
 
 	// Wait for new queue events
-	QUEUE_EVENT_T queueEvent;
-	while (1) {
+	QueueEvent_t queueEvent;
+	while (true) {
 		// Wait until we get a new event in the queue
-		if (xQueueReceive(mainEventQueue, &queueEvent, portMAX_DELAY)) {
+		if (xQueueReceive(g_mainEventQueue, &queueEvent, portMAX_DELAY)) {
 			// Get current state
 			const State_t currState = getCurrentState();
 
@@ -65,7 +125,8 @@ void app_main(void)
 				/*
 				 *	We received a CAN message
 				 */
-				case QUEUE_RECEIVED_NEW_CAN_MESSAGE:
+				case RECEIVED_NEW_CAN_MESSAGE:
+				{
 					// Get the frame
 					const twai_frame_t recFrame = queueEvent.canFrame;
 
@@ -83,25 +144,44 @@ void app_main(void)
 							setCurrentState(STATE_REGISTRATION);
 
 							// Send the HW UUID
-							sendHwUUID();
+							broadcastUuid();
 						}
 
 						// Was it a new ID?
 						else if ((recFrame.header.id >> 21) == CAN_MSG_COMID_ASSIGNATION) {
 							// Check if the HW UUID matches
-							if (recFrame.buffer_len >= 7 && recFrame.buffer[0] == MAC_ADDRESS[5] &&
-								recFrame.buffer[1] == MAC_ADDRESS[4] && recFrame.buffer[2] == MAC_ADDRESS[3] &&
-								recFrame.buffer[3] == MAC_ADDRESS[2] && recFrame.buffer[4] == MAC_ADDRESS[1] &&
-								recFrame.buffer[5] == MAC_ADDRESS[0]) {
+							if (recFrame.buffer_len >= 7 && recFrame.buffer[0] == g_macAddress[0] &&
+								recFrame.buffer[1] == g_macAddress[1] && recFrame.buffer[2] == g_macAddress[2] &&
+								recFrame.buffer[3] == g_macAddress[3] && recFrame.buffer[4] == g_macAddress[4] &&
+								recFrame.buffer[5] == g_macAddress[5]) {
 								// Save the new ID
-								COM_ID = recFrame.buffer[6];
+								g_ownCanComId = recFrame.buffer[6];
+
+								// Get the screen type
+								const uint8_t screen = recFrame.buffer[7];
+
+								// Display the screen
+								ESP_LOGI("main", "Received Screen: %d", screen);
+								QueueEvent_t event;
+								if (screen == SCREEN_TEMPERATURE) {
+									event.command = DISPLAY_TEMPERATURE_SCREEN;
+								}
+								// Speed screen
+								else if (screen == SCREEN_SPEED) {
+									event.command = DISPLAY_SPEED_SCREEN;
+								}
+								// RPM screen
+								else {
+									event.command = DISPLAY_RPM_SCREEN;
+								}
+								xQueueSend(g_guiEventQueue, &event, portMAX_DELAY);
 
 								// Then enter the operation mode
 								setCurrentState(STATE_OPERATION);
 
 								// Logging
-								loggerInfo("Received ID: %d", COM_ID);
-							}
+								ESP_LOGI("main", "Received ID: %d", g_ownCanComId);
+								}
 						}
 					}
 
@@ -109,21 +189,17 @@ void app_main(void)
 					else if (currState == STATE_OPERATION) {
 						// Was it new sensor data?
 						if ((recFrame.header.id >> 21) == CAN_MSG_SENSOR_DATA) {
-							break; // TODO: implement
 							// Create the event
-							QUEUE_EVENT_T event;
-							event.command = QUEUE_CMD_GUI_NEW_SENSOR_DATA;
+							QueueEvent_t event;
+							event.command = NEW_SENSOR_DATA;
 							event.canFrame = recFrame;
 
 							// Queue the event
-							xQueueSend(guiEventQueue, &event, pdMS_TO_TICKS(100));
-
-							// Logging
-							loggerDebug("Received new Sensor Data");
+							xQueueSend(g_guiEventQueue, &event, pdMS_TO_TICKS(100));
 						}
 					}
 					break;
-
+				}
 
 				/*
 				 *	Fallback
@@ -133,26 +209,4 @@ void app_main(void)
 			}
 		}
 	}
-}
-
-void sendHwUUID()
-{
-	// Create the CAN frame buffer
-	uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * 6);
-	buffer[0] = MAC_ADDRESS[5];
-	buffer[1] = MAC_ADDRESS[4];
-	buffer[2] = MAC_ADDRESS[3];
-	buffer[3] = MAC_ADDRESS[2];
-	buffer[4] = MAC_ADDRESS[1];
-	buffer[5] = MAC_ADDRESS[0];
-
-	// Create the CAN frame
-	twai_frame_t* frame = generateCanFrame(CAN_MSG_REGISTRATION, COM_ID, buffer, sizeof(uint8_t) * 6);
-
-	// Send the frame
-	queueCanBusMessage(frame, true, false);
-
-	// Logging
-	loggerInfo("Sent HW UUID '%d-%d-%d-%d-%d-%d' to Sensor Board!", MAC_ADDRESS[0], MAC_ADDRESS[1], MAC_ADDRESS[2],
-			   MAC_ADDRESS[3], MAC_ADDRESS[4], MAC_ADDRESS[5]);
 }

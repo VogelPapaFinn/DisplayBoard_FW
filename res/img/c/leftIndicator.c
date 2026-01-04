@@ -16,11 +16,11 @@
 #define LV_ATTRIBUTE_MEM_ALIGN
 #endif
 
-#ifndef LV_ATTRIBUTE_IMAGE_BLINKERLEFT
-#define LV_ATTRIBUTE_IMAGE_BLINKERLEFT
+#ifndef LV_ATTRIBUTE_IMAGE_LEFTINDICATOR
+#define LV_ATTRIBUTE_IMAGE_LEFTINDICATOR
 #endif
 
-const LV_ATTRIBUTE_MEM_ALIGN LV_ATTRIBUTE_LARGE_CONST LV_ATTRIBUTE_IMAGE_BLINKERLEFT uint8_t blinkerLeft_map[] = {
+const LV_ATTRIBUTE_MEM_ALIGN LV_ATTRIBUTE_LARGE_CONST LV_ATTRIBUTE_IMAGE_LEFTINDICATOR uint8_t leftIndicator_map[] = {
         0x00,
         0x00,
         0x00,
@@ -3671,11 +3671,11 @@ const LV_ATTRIBUTE_MEM_ALIGN LV_ATTRIBUTE_LARGE_CONST LV_ATTRIBUTE_IMAGE_BLINKER
         0x7d,
 };
 
-const lv_image_dsc_t blinkerLeft = {
+const lv_image_dsc_t leftIndicator = {
         .header.cf = LV_COLOR_FORMAT_RGB565,
         .header.magic = LV_IMAGE_HEADER_MAGIC,
         .header.w = 38,
         .header.h = 48,
         .data_size = 1824 * 2,
-        .data = blinkerLeft_map,
+        .data = leftIndicator_map,
 };

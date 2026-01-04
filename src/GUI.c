@@ -1,106 +1,117 @@
-// Project includes
 #include "GUI.h"
 
-// C includes
-#include <Global.h>
-#include <string.h>
+// Project includes
+#include "EventQueues.h"
+#include "Screens/LvglRpmScreen.h"
+#include "Screens/LvglSpeedScreen.h"
+#include "Screens/LvglTemperatureScreen.h"
+
+// espidf includes
+#include <driver/gpio.h>
+#include <driver/spi_common.h>
+#include <esp_lcd_gc9a01.h>
+#include <esp_lcd_io_spi.h>
+#include <esp_lcd_panel_dev.h>
+#include <esp_lcd_panel_interface.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_types.h>
+#include <esp_log.h>
+
+// LVGL includes
+#include "lvgl.h"
+
+/*
+ *	Private defines
+ */
+#define LCD_SPI_HOST SPI2_HOST
+#define SPI_SPEED 10000000
+
+#define LCD_RESOLUTION 240
+#define LCD_BIT_DEPTH 16
+#define LCD_BYTE_DEPTH (LCD_BIT_DEPTH / 8)
+#define FRAME_BUFFER_SIZE_B (LCD_RESOLUTION * LCD_RESOLUTION * LCD_BYTE_DEPTH)
+#define DELAY_BETWEEN_DRAWING_MS 1
+
+#define GPIO_LCD_CS GPIO_NUM_33
+#define GPIO_LCD_CLK GPIO_NUM_34
+#define GPIO_LCD_DIN GPIO_NUM_35
+#define GPIO_LCD_RST GPIO_NUM_36
+#define GPIO_LCD_DC GPIO_NUM_21
+
+/*
+ *	Private typedefs
+ */
+typedef void (*EventHandlerFunction_t)(const QueueEvent_t* p_queueEvent);
+
+/*
+ *	Prototypes
+ */
+void flushPixelsToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap);
+
+//! \brief Task which is needed for lvgl to work
+//! \param p_params void* needed for FreeRTOS to accept this function as task!
+void IRAM_ATTR lvglUpdateTask(void* p_params);
+
+void handleNewSensorData(const QueueEvent_t* p_queueEvent);
 
 /*
  *	Private variables
  */
+// static const EventHandlerFunction_t g_eventHandlers[] = {
+// 	[NEW_SENSOR_DATA] = handleNewSensorData,
+// };
 
-// General display stuff
-const size_t drawBufferSize_ = GUI_LCD_RES * GUI_LCD_RES * 2;
-esp_lcd_panel_dev_config_t lcdPanelConfig_;
-SemaphoreHandle_t semaphoreLvTaskHandle_;
-SemaphoreHandle_t semaphoreLvFlushHandle_;
+esp_lcd_panel_io_handle_t g_lcdPanelIoHandle = NULL;
+esp_lcd_panel_handle_t g_lcdPanelHandle = NULL;
 
-// Display management stuff
-esp_lcd_panel_io_handle_t lcdPanelIoHandle_ = NULL;
-esp_lcd_panel_handle_t lcdPanelHandle_ = NULL;
-lv_display_t* display_ = NULL;
-uint16_t* drawBuffer1_ = NULL;
-uint16_t* drawBuffer2_ = NULL;
-bool firstFrameDrawnD_ = false;
+SemaphoreHandle_t g_lvglGuiSemaphore = NULL;
+SemaphoreHandle_t g_lvglDrawSemaphore = NULL;
 
-// Variables indicating stati
-bool initSuccessful_ = false;
-int waitForFirstFrameCounter_ = 0;
+lv_display_t* g_lvglDisplay = NULL;
+uint16_t* g_lvglFrameBuffer1 = NULL;
+uint16_t* g_lvglFrameBuffer2 = NULL;
+
+bool g_lvglFirstFrameDrawn = false;
+Screen_t g_currentScreen = SCREEN_UNKNOWN;
 
 /*
- *	Private Variables: GUI
+ *	ISRs and Tasks
  */
-
-// Screen 1 - SPEEDOMETER
-lv_obj_t* speedLabel_ = NULL;
-lv_style_t speedLabelStyle_;
-lv_obj_t* kmhLabel_ = NULL;
-lv_style_t kmhLabelStyle_;
-lv_obj_t* blinkerRight_ = NULL;
-
-// Screen 2 - RPM
-lv_obj_t* rpmLabel_ = NULL;
-lv_style_t rpmLabelStyle_;
-lv_obj_t* rpmTitleLabel_ = NULL;
-lv_style_t rpmTitleStyle_;
-lv_obj_t* blinkerLeft_ = NULL;
-
-// Screen 3 - Temp and Fuel
-lv_obj_t* tempLabel_ = NULL;
-lv_style_t tempLabelStyle_;
-lv_obj_t* celsiusLabel_ = NULL;
-lv_style_t celsiusStyle_;
-lv_obj_t* fuelLevelArcs_[10];
-lv_style_t fuelLevelArcStyle_;
-lv_obj_t* fuelLevelInPercentLabel_ = NULL;
-lv_obj_t* fuelLevelInLitreLabel_ = NULL;
-lv_style_t fuelLevelLabelStyle_;
-int lastFuelInPercent_ = -1;
-
-/*
- *	Private function prototypes
- */
-//! \brief Initializes the SPI display
-//! \retval A boolean indicating if the operation was successful
-bool initDisplay(void);
-
-//! \brief Callback function for LVGL to draw to the physical display
-//! \param display A pointer to the lvgl display which is drawn too
-//! \param area The area which is updated
-//! \param pxMap An array which contains the colors for each pixel
-void flushToDisplay(lv_display_t* display, const lv_area_t* area, uint8_t* pxMap);
-
-//! \brief Initializes the LVGL library
-//! \retval A boolean indicating if the operation was successful
-bool initLvgl(void);
-
-//! \brief Builds the screen containing the speedometer
-//! \param display The display the screen should be displayed on
-void createAndShowSpeedometerScreen(lv_display_t* display);
-
-//! \brief Builds the screen containing the RPM
-//! \param display The display the screen should be displayed on
-void createAndShowRpmScreen(lv_display_t* display);
-
-//! \brief Builds the screen containing the water temperature and fuel level
-//! \param display The display the screen should be displayed on
-void createAndShowTempScreen(lv_display_t* display);
-
-/*
- *	Tasks
- */
-
-//! \brief Task which is needed for lvgl to work
-//! \param params void* needed for FreeRTOS to accept this function as task!
-void IRAM_ATTR updateLvglTask(void* params)
+void flushPixelsToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap)
 {
-	// ReSharper disable once CppDFAEndlessLoop
-	while (1) {
-		// Try to get the semaphore mutex
-		if (xSemaphoreTake(semaphoreLvTaskHandle_, portMAX_DELAY) == pdTRUE) {
-			// Then run the lvgl task handler
+	// Swap the color channels as needed
+	lv_draw_sw_rgb565_swap(p_pxMap, (p_area->x2 + 1 - p_area->x1) * (p_area->y2 + 1 - p_area->y1)); // NOLINT
+
+	// Then draw the bitmap to the physical display (+1 needed, otherwise the image is distorted)
+	if (xSemaphoreTake(g_lvglDrawSemaphore, portMAX_DELAY) == pdTRUE) {
+		esp_lcd_panel_draw_bitmap(g_lcdPanelHandle, p_area->x1, p_area->y1, p_area->x2 + 1, p_area->y2 + 1, // NOLINT
+								  p_pxMap); // NOLINT
+		// vTaskDelay(pdMS_TO_TICKS(DELAY_BETWEEN_DRAWING_MS));
+		xSemaphoreGive(g_lvglDrawSemaphore);
+	}
+
+	// Turn the lcd panel on if it's the first image drawn
+	if (!g_lvglFirstFrameDrawn) {
+		g_lvglFirstFrameDrawn = true;
+		// Turn the display on
+		if (esp_lcd_panel_disp_on_off(g_lcdPanelHandle, true) != ESP_OK) {
+			esp_rom_printf("GUI", "Couldn't turn on LCD panel");
+		}
+	}
+
+	lv_display_flush_ready(g_lvglDisplay);
+}
+
+void lvglUpdateTask(void* p_params)
+{
+	while (true) {
+		// Try to get the semaphore
+		if (xSemaphoreTake(g_lvglGuiSemaphore, portMAX_DELAY) == pdTRUE) {
+			// Run the lvgl task handler
 			lv_timer_handler();
-			xSemaphoreGive(semaphoreLvTaskHandle_);
+
+			// Give the semaphore free
+			xSemaphoreGive(g_lvglGuiSemaphore);
 
 			// Wait 10ms
 			vTaskDelay(pdMS_TO_TICKS(10));
@@ -108,568 +119,257 @@ void IRAM_ATTR updateLvglTask(void* params)
 	}
 }
 
-//! \brief A task started when LVGL is initialized. It checks if the first frame (for each)
-//!        display was drawn and if so turn the display on. Otherwise, it will display nonsense
-//!        at startup!
-//! \param params void* needed for FreeRTOS to accept this function as task!
-//! \note This task ends itself!
-void IRAM_ATTR taskWaitForFirstFrameDrawn(void* params)
-{
-	// Bool used to prevent double-checking
-	bool displayCompleted = false;
-
-	while (1) {
-		// Wait 100ms before next try
-		vTaskDelay(pdMS_TO_TICKS(100));
-
-		//! Check display
-		if (firstFrameDrawnD_ && !displayCompleted) {
-			ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(lcdPanelHandle_, true));
-			displayCompleted = true;
-		}
-
-		// Check if counter > 10 was reached
-		if (waitForFirstFrameCounter_++ > 10) {
-			// Just turn them on, otherwise they will never light up
-			ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(lcdPanelHandle_, true));
-			vTaskDelete(NULL);
-		}
-	}
-}
-
-void IRAM_ATTR handleGuiEventQueueTask()
-{
-	QUEUE_EVENT_T queueEvent;
-	while (true) {
-		// Wait until we get a new event in the queue
-		if (xQueueReceive(guiEventQueue, &queueEvent, portMAX_DELAY)) {
-			switch (queueEvent.command) {
-				case QUEUE_CMD_GUI_NEW_SENSOR_DATA:
-					// Get the message
-					const uint8_t* msg = queueEvent.canFrame.buffer;
-
-					// Get the speed
-					const uint8_t speed = *msg;
-					guiSetSpeed(speed);
-
-					// Get the RPM
-					const uint16_t lowerRpmByte = *(++msg);
-					const uint16_t upperRpmByte = *(++msg) << 8;
-					const uint16_t rpm = lowerRpmByte + upperRpmByte;
-					guiSetRpm(rpm);
-
-					// Get the fuel level
-					msg++;
-					const uint8_t fuelLevel = *msg;
-					guiSetFuelLevelPercent(fuelLevel);
-
-					// Get the water temperature
-					msg++;
-					const uint8_t waterTemp = *msg;
-					guiSetWaterTemperature(waterTemp);
-
-					// Get the oil pressure
-					msg++;
-					const bool oilPressure = *msg;
-					guiSetOilPressure(oilPressure);
-
-					// Get the left indicator
-					msg++;
-					const bool leftIndicator = *msg;
-					guiSetLeftBlinkerActive(leftIndicator);
-
-					// Get the right indicator
-					msg++;
-					const bool rightIndicator = *msg;
-					guiSetRightBlinkerActive(rightIndicator);
-
-					break;
-				default:
-					break;
-			}
-		}
-	}
-}
-
 /*
  *	Private functions
  */
-bool initDisplay(void)
+bool initDisplay()
 {
-	// Create the SPI config
-	const esp_lcd_panel_io_spi_config_t lcdPanel1IoConfig = {
-		.dc_gpio_num = GUI_GPIO_LCD_DC,
-		.cs_gpio_num = GUI_GPIO_LCD_CS,
-		.pclk_hz = GUI_SPI_SPEED,
+	// Create the SPI config for the LCD
+	const esp_lcd_panel_io_spi_config_t lcdPanelIoConfig = {
+		.dc_gpio_num = GPIO_LCD_DC,
+		.cs_gpio_num = GPIO_LCD_CS,
+		.pclk_hz = SPI_SPEED,
 		.lcd_cmd_bits = 8,
 		.lcd_param_bits = 8,
 		.spi_mode = 0,
 		.trans_queue_depth = 10,
 	};
 
-	// Then attach it to the SPI bus
-	if (esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)GUI_LCD_SPI_HOST, &lcdPanel1IoConfig, &lcdPanelIoHandle_) !=
-		ESP_OK) {
+	// Initialize the LCD
+	if (esp_lcd_new_panel_io_spi(LCD_SPI_HOST, &lcdPanelIoConfig, &g_lcdPanelIoHandle) != ESP_OK) {
+		ESP_LOGE("GUI", "Failed to initialize LCD panel");
+
 		return false;
 	}
 
 	// Then create the panel config
-	const esp_lcd_panel_dev_config_t lcdPanelConfig = {
-		.reset_gpio_num = GUI_GPIO_LCD_RST,
+	const esp_lcd_panel_dev_config_t lcdPanelDevConfig = {
+		.reset_gpio_num = GPIO_LCD_RST,
 		.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
 		.bits_per_pixel = 16,
 	};
-	lcdPanelConfig_.reset_gpio_num = GUI_GPIO_LCD_RST;
-	lcdPanelConfig_.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
-	lcdPanelConfig_.bits_per_pixel = 16;
 
-	// Then activate it
-	ESP_ERROR_CHECK(esp_lcd_new_panel_gc9a01(lcdPanelIoHandle_, &lcdPanelConfig, &lcdPanelHandle_));
-	ESP_ERROR_CHECK(esp_lcd_panel_reset(lcdPanelHandle_));
-	ESP_ERROR_CHECK(esp_lcd_panel_init(lcdPanelHandle_));
-	ESP_ERROR_CHECK(esp_lcd_panel_invert_color(lcdPanelHandle_, true));
-	ESP_ERROR_CHECK(esp_lcd_panel_mirror(lcdPanelHandle_, true, false));
-	ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(lcdPanelHandle_, true));
+	// Create a new GC9A01 panel
+	if (esp_lcd_new_panel_gc9a01(g_lcdPanelIoHandle, &lcdPanelDevConfig, &g_lcdPanelHandle) != ESP_OK) {
+		ESP_LOGE("GUI", "Couldn't create GC9A01 panel");
+		return false;
+	}
+
+	// Reset the panel
+	if (esp_lcd_panel_reset(g_lcdPanelHandle) != ESP_OK) {
+		ESP_LOGE("GUI", "Couldn't reset panel");
+		return false;
+	}
+
+	// Initialize the panel
+	if (esp_lcd_panel_init(g_lcdPanelHandle)) {
+		ESP_LOGE("GUI", "Couldn't initialize LCD panel");
+		return false;
+	}
+
+	// Invert the color
+	if (esp_lcd_panel_invert_color(g_lcdPanelHandle, true) != ESP_OK) {
+		ESP_LOGE("GUI", "Couldn't invert color of LCD panel");
+		return false;
+	}
+
+	// Mirror the screen on the x-axis
+	if (esp_lcd_panel_mirror(g_lcdPanelHandle, true, false) != ESP_OK) {
+		ESP_LOGE("GUI", "Couldn't mirror LCD panel");
+		return false;
+	}
+
+	// Turn the display off
+	if (esp_lcd_panel_disp_on_off(g_lcdPanelHandle, false) != ESP_OK) {
+		ESP_LOGE("GUI", "Couldn't turn off LCD panel");
+		return false;
+	}
 
 	// Everything was successful
 	return true;
 }
 
-void flushToDisplay(lv_display_t* display, const lv_area_t* area, uint8_t* pxMap)
+bool initLvgl()
 {
-	// Swap the color channels as needed
-	lv_draw_sw_rgb565_swap(pxMap, (area->x2 + 1 - area->x1) * (area->y2 + 1 - area->y1));
+	// Create the needed semaphores
+	g_lvglGuiSemaphore = xSemaphoreCreateMutex();
+	g_lvglDrawSemaphore = xSemaphoreCreateMutex();
 
-	// Then draw the bitmap to the physical display (+1 needed, otherwise the image is distorted)
-	if (xSemaphoreTake(semaphoreLvFlushHandle_, portMAX_DELAY) == pdTRUE) {
-		esp_lcd_panel_draw_bitmap(lcdPanelHandle_, area->x1, area->y1, area->x2 + 1, area->y2 + 1, pxMap);
-		vTaskDelay(pdMS_TO_TICKS(GUI_DELAY_BETWEEN_DRAWING_MS));
-		xSemaphoreGive(semaphoreLvFlushHandle_);
-	}
-	lv_display_flush_ready(display);
-	firstFrameDrawnD_ = true;
-}
-
-bool initLvgl(void)
-{
+	// Call the lvgl init function
 	lv_init();
 
-	// Create the lvgl displays
-	display_ = lv_display_create(GUI_LCD_RES, GUI_LCD_RES);
+	// Create the display
+	g_lvglDisplay = lv_display_create(LCD_RESOLUTION, LCD_RESOLUTION);
 
-	// Create the three draw buffers
-	drawBuffer1_ = (uint16_t*)heap_caps_malloc(drawBufferSize_, MALLOC_CAP_SPIRAM);
+	// Create the two frame buffers
+	g_lvglFrameBuffer1 = (uint16_t*)malloc(FRAME_BUFFER_SIZE_B);
+	g_lvglFrameBuffer2 = (uint16_t*)malloc(FRAME_BUFFER_SIZE_B);
 
-	// Create the three secondary draw buffers
-	drawBuffer2_ = (uint16_t*)heap_caps_malloc(drawBufferSize_, MALLOC_CAP_SPIRAM);
-
-	// Check the draw buffers
-	if (drawBuffer1_ == NULL) {
-		// Logging
-		loggerCritical("Failed to allocate display buffers!");
+	// Check if they were allocated
+	if (g_lvglFrameBuffer1 == NULL || g_lvglFrameBuffer2 == NULL) {
+		ESP_LOGE("GUI", "Couldn't allocate memory for the two frame buffers");
 		return false;
 	}
 
-	// Clear the six buffers - they should sum up to around 0.69 mb
-	memset(drawBuffer1_, 0, drawBufferSize_);
-	memset(drawBuffer2_, 0, drawBufferSize_);
+	// Clear the buffers
+	memset(g_lvglFrameBuffer1, 0, FRAME_BUFFER_SIZE_B);
+	memset(g_lvglFrameBuffer2, 0, FRAME_BUFFER_SIZE_B);
 
 	// Pass LVGL the draw buffers
-	lv_display_set_buffers(display_, drawBuffer1_, drawBuffer2_, drawBufferSize_, LV_DISPLAY_RENDER_MODE_PARTIAL);
+	lv_display_set_buffers(g_lvglDisplay, g_lvglFrameBuffer1, g_lvglFrameBuffer2, FRAME_BUFFER_SIZE_B,
+						   LV_DISPLAY_RENDER_MODE_PARTIAL);
 
 	// Set the color formats
-	lv_display_set_color_format(display_, LV_COLOR_FORMAT_RGB565);
+	lv_display_set_color_format(g_lvglDisplay, LV_COLOR_FORMAT_RGB565);
 
-	// Rotate the display
-	// lv_display_set_rotation(display3_, LV_DISPLAY_ROTATION_180);
+	// Set the background for the active screen
+	lv_obj_set_style_bg_color(lv_display_get_screen_active(g_lvglDisplay), lv_color_hex(0x000000), LV_PART_MAIN);
 
 	// Set the callback function, to draw to the physical displays
-	lv_display_set_flush_cb(display_, flushToDisplay);
+	lv_display_set_flush_cb(g_lvglDisplay, flushPixelsToDisplay);
 
-	// Set tick interface
+	// Set tick interface for animations etc.
 	lv_tick_set_cb(xTaskGetTickCount);
 
-	// Everything was successful
+	if (xTaskCreate(lvglUpdateTask, "lvglUpdateTask", 10000, NULL, 0, NULL) != pdPASS) {
+		// Logging
+		ESP_LOGE("GUI", "Failed to create task: \"lvglUpdateTask\"!");
+
+		return false;
+	}
+
+	// Everything worked
 	return true;
 }
 
-void createAndShowSpeedometerScreen(lv_display_t* display)
+void IRAM_ATTR guiEventQueueTask()
 {
-	// Get the pointer to the active screen
-	lv_obj_t* screen = lv_display_get_screen_active(display);
-
-	// Create the speedometer label
-	speedLabel_ = lv_label_create(screen);
-
-	// Include fonts
-	LV_FONT_DECLARE(E1234_80_FONT);
-	LV_FONT_DECLARE(VCR_OSD_MONO_24_FONT);
-
-	// Apply the speedometer label style
-	lv_style_init(&speedLabelStyle_);
-	lv_style_set_text_color(&speedLabelStyle_, lv_color_hex(0x008F3C));
-	lv_style_set_text_font(&speedLabelStyle_, &E1234_80_FONT);
-	lv_obj_add_style(speedLabel_, &speedLabelStyle_, LV_PART_MAIN);
-
-	// Center the label
-	lv_obj_center(speedLabel_);
-
-	// Set its text
-	lv_label_set_text(speedLabel_, "200");
-
-	// Create the kmh label
-	kmhLabel_ = lv_label_create(screen);
-
-	// Apply its style
-	lv_style_init(&kmhLabelStyle_);
-	lv_style_set_text_color(&kmhLabelStyle_, lv_color_hex(0x008F3C));
-	lv_style_set_text_font(&kmhLabelStyle_, &VCR_OSD_MONO_24_FONT);
-	lv_obj_add_style(kmhLabel_, &kmhLabelStyle_, LV_PART_MAIN);
-
-	// Position it above the speedometer label
-	lv_obj_align(kmhLabel_, LV_ALIGN_CENTER, 0, -80);
-
-	// Set its text
-	lv_label_set_text(kmhLabel_, "kmh");
-
-	// Create the blinker right arrow
-	LV_IMAGE_DECLARE(blinkerRight);
-	blinkerRight_ = lv_image_create(screen);
-	lv_image_set_src(blinkerRight_, &blinkerRight);
-
-	// Position it centered at the bottom
-	lv_obj_align(blinkerRight_, LV_ALIGN_CENTER, 0, 90);
-
-	// Disable the blinker visually
-	guiSetRightBlinkerActive(false);
+	QueueEvent_t queueEvent;
+	while (true) {
+		// Wait until we get a new event
+		if (xQueueReceive(g_guiEventQueue, &queueEvent, portMAX_DELAY)) {
+			switch (queueEvent.command) {
+				case DISPLAY_TEMPERATURE_SCREEN:
+				{
+					guiDisplayScreen(SCREEN_TEMPERATURE);
+					break;
+				}
+				case DISPLAY_SPEED_SCREEN:
+				{
+					guiDisplayScreen(SCREEN_SPEED);
+					break;
+				}
+				case DISPLAY_RPM_SCREEN:
+				{
+					guiDisplayScreen(SCREEN_RPM);
+					break;
+				}
+				default: break;
+			}
+		}
+	}
 }
 
-void createAndShowRpmScreen(lv_display_t* display)
+void handleNewSensorData(const QueueEvent_t* p_queueEvent)
 {
-	// Get the pointer to the active screen
-	lv_obj_t* screen = lv_display_get_screen_active(display);
-
-	// Create the rpm label
-	rpmLabel_ = lv_label_create(screen);
-
-	// Include fonts
-	LV_FONT_DECLARE(E1234_70_FONT);
-	LV_FONT_DECLARE(VCR_OSD_MONO_24_FONT);
-
-	// Apply the rpm label style
-	lv_style_init(&rpmLabelStyle_);
-	lv_style_set_text_color(&rpmLabelStyle_, lv_color_hex(0x008F3C));
-	lv_style_set_text_font(&rpmLabelStyle_, &E1234_70_FONT);
-	lv_obj_add_style(rpmLabel_, &rpmLabelStyle_, LV_PART_MAIN);
-
-	// Center the label
-	lv_obj_center(rpmLabel_);
-
-	// Set its text
-	lv_label_set_text(rpmLabel_, "7700");
-
-	// Create the rpm title label
-	rpmTitleLabel_ = lv_label_create(screen);
-
-	// Apply its style
-	lv_style_init(&rpmTitleStyle_);
-	lv_style_set_text_color(&rpmTitleStyle_, lv_color_hex(0x008F3C));
-	lv_style_set_text_font(&rpmTitleStyle_, &VCR_OSD_MONO_24_FONT);
-	lv_obj_add_style(rpmTitleLabel_, &rpmTitleStyle_, LV_PART_MAIN);
-
-	// Position it above the rpm label
-	lv_obj_align(rpmTitleLabel_, LV_ALIGN_CENTER, 0, -80);
-
-	// Set its text
-	lv_label_set_text(rpmTitleLabel_, "RPM");
-
-	// Create the blinker left arrow
-	LV_IMAGE_DECLARE(blinkerLeft);
-	blinkerLeft_ = lv_image_create(screen);
-	lv_image_set_src(blinkerLeft_, &blinkerLeft);
-
-	// Position it centered at the bottom
-	lv_obj_align(blinkerLeft_, LV_ALIGN_CENTER, 0, 90);
-
-	// Disable the blinker visually
-	guiSetLeftBlinkerActive(false);
-}
-
-void createAndShowTempScreen(lv_display_t* display)
-{
-	// Get the pointer to the active screen
-	lv_obj_t* screen = lv_display_get_screen_active(display);
-
-	// Create the temp label
-	tempLabel_ = lv_label_create(screen);
-
-	// Include fonts
-	LV_FONT_DECLARE(E1234_80_FONT);
-	LV_FONT_DECLARE(VCR_OSD_MONO_24_FONT);
-
-	// Apply the temp label style
-	lv_style_init(&tempLabelStyle_);
-	lv_style_set_text_color(&tempLabelStyle_, lv_color_hex(0x008F3C));
-	lv_style_set_text_font(&tempLabelStyle_, &E1234_80_FONT);
-	lv_obj_add_style(tempLabel_, &tempLabelStyle_, LV_PART_MAIN);
-
-	// Center the label
-	lv_obj_align(tempLabel_, LV_ALIGN_CENTER, 10, 0);
-
-	// Set its text
-	lv_label_set_text(tempLabel_, "90");
-
-	// Create the temp title label
-	celsiusLabel_ = lv_label_create(screen);
-
-	// Apply its style
-	lv_style_init(&celsiusStyle_);
-	lv_style_set_text_color(&celsiusStyle_, lv_color_hex(0x008F3C));
-	lv_style_set_text_font(&celsiusStyle_, &VCR_OSD_MONO_24_FONT);
-	lv_obj_add_style(celsiusLabel_, &celsiusStyle_, LV_PART_MAIN);
-
-	// Position it above the Celsius label
-	lv_obj_align(celsiusLabel_, LV_ALIGN_RIGHT_MID, -10, 20);
-
-	// Set its text
-	lv_label_set_text(celsiusLabel_, "°C");
-
-	// Create the arc background style
-	lv_style_init(&fuelLevelArcStyle_);
-	lv_style_set_arc_color(&fuelLevelArcStyle_, lv_color_hex(0x008F3C));
-	lv_style_set_arc_rounded(&fuelLevelArcStyle_, false);
-
-	// Create the 10 arcs for the fuel level
-	for (int i = 0; i < 10; i++) {
-		// Create the arc
-		fuelLevelArcs_[i] = lv_arc_create(screen);
-
-		// Set its dimensions
-		lv_obj_set_width(fuelLevelArcs_[i], 220);
-		lv_obj_set_height(fuelLevelArcs_[i], 220);
-		lv_obj_set_style_arc_width(fuelLevelArcs_[i], 20, LV_PART_MAIN);
-
-		// Position it
-		lv_obj_center(fuelLevelArcs_[i]);
-		lv_arc_set_bg_angles(fuelLevelArcs_[i], 0, 12);
-		lv_arc_set_rotation(fuelLevelArcs_[i], 100 + i * 16); // Initial rotation + offset per arc
-		lv_arc_set_value(fuelLevelArcs_[i], 100);
-
-		// Remove the knob & indicator
-		lv_obj_set_style_opa(fuelLevelArcs_[i], LV_OPA_0, LV_PART_KNOB);
-		lv_obj_set_style_opa(fuelLevelArcs_[i], LV_OPA_0, LV_PART_INDICATOR);
-
-		// Apply the background style
-		lv_obj_add_style(fuelLevelArcs_[i], &fuelLevelArcStyle_, LV_PART_MAIN);
-
-		// Color them accordingly
-		if (i == 0) {
-			lv_obj_set_style_arc_color(fuelLevelArcs_[i], lv_color_hex(0x992600), LV_PART_MAIN);
-		}
-		else if (i <= 2) {
-			lv_obj_set_style_arc_color(fuelLevelArcs_[i], lv_color_hex(0xC69800), LV_PART_MAIN);
-		}
-
-		// Debugging / Testing Stuff
-		// if (i > 6) {
-		//     lv_obj_set_style_arc_opa(fuelLevelArcs_[i], LV_OPA_20, LV_PART_MAIN);
-		// }
+	if (p_queueEvent == NULL || p_queueEvent->canFrame.buffer == NULL || g_currentScreen == SCREEN_UNKNOWN) {
+		return;
 	}
 
-	// Create the fuel in percent label
-	fuelLevelInPercentLabel_ = lv_label_create(screen);
+	// Get the message
+	const uint8_t* frameBuffer = p_queueEvent->canFrame.buffer;
 
-	// Apply the label style
-	lv_style_init(&fuelLevelLabelStyle_);
-	lv_style_set_text_color(&fuelLevelLabelStyle_, lv_color_hex(0x008F3C));
-	lv_style_set_text_font(&fuelLevelLabelStyle_, &VCR_OSD_MONO_24_FONT);
-	lv_obj_add_style(fuelLevelInPercentLabel_, &fuelLevelLabelStyle_, LV_PART_MAIN);
+	// Get the oil pressure
+	const bool oilPressure = *(frameBuffer + 5);
 
-	// Position
-	lv_obj_align(fuelLevelInPercentLabel_, LV_ALIGN_TOP_MID, 15, 30);
+	// Act depending on the current screen
+	switch (g_currentScreen) {
+		case SCREEN_TEMPERATURE:
+			{
+				// Get the temperature
+				const uint8_t waterTemp = *(frameBuffer + 4);
 
-	// Set its text
-	lv_label_set_text(fuelLevelInPercentLabel_, "100%");
+				// Get the fuel level in %
+				const uint8_t fuelLevel = *(frameBuffer + 3);
 
-	// Create the fuel in litre label
-	fuelLevelInLitreLabel_ = lv_label_create(screen);
-
-	// Apply the label style
-	lv_obj_add_style(fuelLevelInLitreLabel_, &fuelLevelLabelStyle_, LV_PART_MAIN);
-
-	// Position
-	lv_obj_align(fuelLevelInLitreLabel_, LV_ALIGN_BOTTOM_MID, 15, -30);
-
-	// Set its text
-	lv_label_set_text(fuelLevelInLitreLabel_, "50L");
+				break;
+			}
+		case SCREEN_SPEED:
+			break;
+		case SCREEN_RPM:
+			break;
+		default:
+			ESP_LOGE("GUI", "Currently displaying an invalid screen. Couldn't update data");
+			break;
+	}
 }
 
-bool guiInit(void)
+/*
+ *	Public function implementations
+ */
+bool guiInit()
 {
+	// Create SPI bus config
+	const spi_bus_config_t spiBusConfig = {.sclk_io_num = GPIO_LCD_CLK,
+										   .mosi_io_num = GPIO_LCD_DIN,
+										   .miso_io_num = -1,
+										   .quadwp_io_num = -1,
+										   .quadhd_io_num = -1,
+										   .max_transfer_sz = SOC_SPI_MAXIMUM_BUFFER_SIZE};
+
 	// Initialize SPI bus
-	const spi_bus_config_t spiBusConfig = {
-		.sclk_io_num = GUI_GPIO_LCD_CLK,
-		.mosi_io_num = GUI_GPIO_LCD_DIN,
-		.miso_io_num = -1,
-		.quadwp_io_num = -1,
-		.quadhd_io_num = -1,
-		.max_transfer_sz = SOC_SPI_MAXIMUM_BUFFER_SIZE // TEST_LCD_H_RES * 80 * sizeof(uint16_t),
-	};
-
-	// Check SPI bus initialization
-	if (spi_bus_initialize(GUI_LCD_SPI_HOST, &spiBusConfig, SPI_DMA_CH_AUTO) != ESP_OK) {
+	if (spi_bus_initialize(LCD_SPI_HOST, &spiBusConfig, SPI_DMA_CH_AUTO) != ESP_OK) {
 		// Logging
-		loggerCritical("Failed to initialize SPI bus");
+		ESP_LOGE("GUI", "Failed to initialize SPI bus");
+
 		return false;
 	}
 
-	// Initialize the three displays
+	// Initialize the display
 	if (!initDisplay()) {
-		// Logging
-		loggerCritical("Failed to initialize displays");
-
-		return false;
-	};
-
-	// Create the Semaphore needed for the lvgl task handler
-	semaphoreLvTaskHandle_ = xSemaphoreCreateMutex();
-
-	// Create the Semaphore needed for the drawing
-	semaphoreLvFlushHandle_ = xSemaphoreCreateMutex();
-
-	ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(lcdPanelHandle_, true));
-
-	// Initialize LVGL
-	if (!initLvgl()) {
-		// Logging
-		loggerCritical("Failed to initialize LVGL");
-
+		ESP_LOGE("GUI", "Failed to initialize display");
 		return false;
 	}
 
-	// Set the background for each display
-	lv_obj_set_style_bg_color(lv_display_get_screen_active(display_), lv_color_hex(0x000000), LV_PART_MAIN);
-
-	// Start the turn on display task
-	xTaskCreate(&taskWaitForFirstFrameDrawn, "taskWaitForFirstFrameDrawn", 2024, NULL, 0, NULL);
-
-	// Build the screens and put them on the display
-	createAndShowTempScreen(display_);
-
-	// Then start the lvgl task handler task on core 0 - on core 1 the application crashes in the
-	// createAndShowTempScreen function
-	if (xTaskCreate(updateLvglTask, "updateLvglTask", 10000, NULL, 0, NULL) != pdPASS) {
-		// Logging
-		loggerCritical("Failed to create task: \"updateLvglTask\"!");
+	// Initialize lvgl if not yet happened
+	if (!initLvgl()) {
+		ESP_LOGE("GUI", "Failed to initialize LVGL");
 
 		return false;
 	}
 
 	// Start the task which will handle all the queue events
-	if (xTaskCreate(handleGuiEventQueueTask, "handleGuiEventQueueTask", 16384 / 4, NULL, 0, NULL) != pdPASS) {
+	if (xTaskCreate(guiEventQueueTask, "handleGuiEventQueueTask", 16384 / 4, NULL, 2, NULL) != pdPASS) {
 		// Logging
-		loggerCritical("Failed to create task: \"handleGuiEventQueueTask\"!");
+		ESP_LOGE("GUI", "Failed to create task: \"handleGuiEventQueueTask\"!");
 
 		return false;
 	}
 
-
-	// Was everything successful?
-	initSuccessful_ = true;
-	return initSuccessful_;
+	return true;
 }
 
-void guiDeInit(void)
+bool guiDisplayScreen(const Screen_t screen)
 {
-	// Delete the draw buffers
-	free(drawBuffer1_);
-	free(drawBuffer2_);
-}
+	ESP_LOGI("GUI", "Displaying screen: %d", screen);
 
-void guiSetRightBlinkerActive(const bool active)
-{
-	if (active) {
-		// Set its opacity to 100% (active)
-		lv_obj_set_style_opa(blinkerRight_, LV_OPA_100, LV_PART_MAIN);
-	}
-	else {
-		// Set its opacity to 20% (inactive)
-		lv_obj_set_style_opa(blinkerRight_, LV_OPA_20, LV_PART_MAIN);
-	}
-}
-
-void guiSetLeftBlinkerActive(const bool active)
-{
-	if (active) {
-		// Set its opacity to 100% (active)
-		lv_obj_set_style_opa(blinkerLeft_, LV_OPA_100, LV_PART_MAIN);
-	}
-	else {
-		// Set its opacity to 20% (inactive)
-		lv_obj_set_style_opa(blinkerLeft_, LV_OPA_20, LV_PART_MAIN);
-	}
-}
-
-void guiSetOilPressure(bool pressure)
-{
-	// TODO: Show the NO OIL PRESSURE screen or hide it
-}
-
-void guiSetFuelLevelPercent(const uint8_t percent)
-{
-	// Save the old value
-	lastFuelInPercent_ = (int)percent;
-
-	// Set the new text
-	lv_label_set_text_fmt(fuelLevelInPercentLabel_, "%d%%", (int)percent);
-
-	// Check if the fuel level increased (by more than 5%)
-	if (lastFuelInPercent_ < (int)percent + 5) {
-		// Reactivate all fuel blocks
-		for (int i = 0; i < 10; i++) {
-			lv_obj_set_style_arc_opa(fuelLevelArcs_[i], LV_OPA_100, LV_PART_MAIN);
-		}
+	// Destroy all screens if necessary
+	if (g_currentScreen != SCREEN_UNKNOWN) {
+		guiDestroyTemperatureScreen();
+		guiDestroySpeedScreen();
+		guiDestroyRpmScreen();
 	}
 
-	// Update the fuel blocks
-	const int currActiveBlock = ((int)percent + 10) / 10;
-	for (int i = 9; i >= currActiveBlock; i--) {
-		lv_obj_set_style_arc_opa(fuelLevelArcs_[i], LV_OPA_20, LV_PART_MAIN);
-	}
-}
-
-void guiSetFuelLevelLitre(const uint8_t litres)
-{
-	// Set the new text
-	lv_label_set_text_fmt(fuelLevelInLitreLabel_, "%dL", (int)litres);
-}
-
-void guiSetWaterTemperature(const uint8_t temp)
-{
-	// Try to get the semaphore mutex
-	if (xSemaphoreTake(semaphoreLvTaskHandle_, portMAX_DELAY) == pdTRUE) {
-		// Set the new text
-		lv_label_set_text_fmt(tempLabel_, "%d", (int)temp);
-		xSemaphoreGive(semaphoreLvTaskHandle_);
-	}
-}
-
-void guiSetSpeed(const uint8_t speed)
-{
-	// Try to get the semaphore mutex
-	if (xSemaphoreTake(semaphoreLvTaskHandle_, portMAX_DELAY) == pdTRUE) {
-		// Set the new text
-		lv_label_set_text_fmt(speedLabel_, "%d", (int)speed);
-		xSemaphoreGive(semaphoreLvTaskHandle_);
-	}
-}
-
-void guiSetRpm(const uint16_t rpm)
-{
-	// Try to get the semaphore mutex
-	if (xSemaphoreTake(semaphoreLvTaskHandle_, portMAX_DELAY) == pdTRUE) {
-		// Set the new text
-		lv_label_set_text_fmt(rpmLabel_, "%d", (int)rpm);
-		xSemaphoreGive(semaphoreLvTaskHandle_);
+	// Create the screen and show it
+	switch (screen) {
+		case SCREEN_TEMPERATURE:
+			return guiCreateAndShowTemperatureScreen(&g_lvglGuiSemaphore);
+		case SCREEN_SPEED:
+			return guiCreateAndShowSpeedScreen(&g_lvglGuiSemaphore);
+		case SCREEN_RPM:
+			return guiCreateAndShowRpmScreen(&g_lvglGuiSemaphore);
+		default:
+			ESP_LOGW("GUI", "Unknown screen: %d", screen);
+			return false;
 	}
 }

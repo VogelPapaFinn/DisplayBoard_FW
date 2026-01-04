@@ -8,9 +8,17 @@ set(FILES
         "../include/GUI.h"
         "GUI.c"
 
+        # Screens
+        "../include/Screens/LvglTemperatureScreen.h"
+        "Screens/LvglTemperatureScreen.c"
+        "../include/Screens/LvglRpmScreen.h"
+        "Screens/LvglRpmScreen.c"
+        "../include/Screens/LvglSpeedScreen.h"
+        "Screens/LvglSpeedScreen.c"
+
         # Global stuff
-        "../include/Global.h"
-        "Global.c"
+        "../include/EventQueues.h"
+        "EventQueues.c"
 
 
         # *** RESOURCES *** #
@@ -18,8 +26,12 @@ set(FILES
         "../res/fonts/c/E1234_80.c"
         "../res/fonts/c/E1234_70.c"
         "../res/fonts/c/VCR_OSD_MONO_24.c"
+
+        # Images
+        "../res/img/c/leftIndicator.c"
+        "../res/img/c/rightIndicator.c"
 )
 
 idf_component_register(SRCS ${FILES}
-        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_lcd_gc9a01 esp_wifi nvs_flash can logger statemachine
+        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_lcd_gc9a01 esp_wifi nvs_flash can statemachine
         INCLUDE_DIRS "../include/")
