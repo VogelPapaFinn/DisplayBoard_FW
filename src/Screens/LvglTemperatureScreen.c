@@ -206,12 +206,15 @@ void guiSetFuelLevel(const uint8_t levelInPercent, const SemaphoreHandle_t* p_gu
 		// Set the text
 		snprintf(g_instance->fuelLevelP, sizeof(g_instance->fuelLevelP), "%d%%", levelInPercent);
 
+		// Convert the percent to a double
+		const double percent = ((double)levelInPercent) / 100.0;
+
 		// Special case if levelInPercent is 0
-		if (levelInPercent == 0) {
+		if (percent == 0) {
 			snprintf(g_instance->fuelLevelL, sizeof(g_instance->fuelLevelL), "%dL", 0);
 		} else {
 			snprintf(g_instance->fuelLevelL, sizeof(g_instance->fuelLevelL), "%dL",
-					 (uint8_t)(50 / levelInPercent));
+					 (uint8_t)(50.0 / percent));
 		}
 
 		// Apply the text to the labels
