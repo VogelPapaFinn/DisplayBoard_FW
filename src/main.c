@@ -3,6 +3,7 @@
 #include "EventQueues.h"
 #include "can.h"
 #include "statemachine.h"
+#include "Version.h"
 
 // FreeRTOS includes
 #include "freertos/FreeRTOS.h"
@@ -90,6 +91,8 @@ void broadcastUuid()
  */
 void app_main(void) // NOLINT
 {
+	ESP_LOGI("main", "Firmware Version: %s", VERSION_FULL);
+
 	// Get the MAC address
 	getMacAddress();
 
@@ -130,8 +133,21 @@ void app_main(void) // NOLINT
 					// Get the frame
 					const twai_frame_t recFrame = queueEvent.canFrame;
 
+					// Get the message id
+					const uint8_t messageId = recFrame.header.id >> CAN_FRAME_HEADER_OFFSET;
+
+					// Did the message come from the master?
+					if (((recFrame.header.id << (32 - CAN_FRAME_HEADER_OFFSET)) >> CAN_FRAME_HEADER_OFFSET) != 0) {
+						continue;
+					}
+
 					// Should we restart?
-					if ((recFrame.header.id >> 21) == CAN_MSG_DISPLAY_RESTART) {
+					if (messageId == CAN_MSG_DISPLAY_RESTART) {
+						// Were we meant?
+						if (recFrame.buffer[0] != g_ownCanComId) {
+							continue;
+						}
+
 						esp_rom_printf("Restarting\n");
 						esp_restart();
 					}
@@ -139,16 +155,18 @@ void app_main(void) // NOLINT
 					// Are we in the INIT or REGISTRATION state?
 					if (currState == STATE_INIT || currState == STATE_REGISTRATION) {
 						// Was it an instruction to register ourselves?
-						if ((recFrame.header.id >> 21) == CAN_MSG_REGISTRATION) {
+						if (messageId == CAN_MSG_REGISTRATION) {
 							// Change the mode
 							setCurrentState(STATE_REGISTRATION);
 
 							// Send the HW UUID
 							broadcastUuid();
+
+							continue;
 						}
 
 						// Was it a new ID?
-						else if ((recFrame.header.id >> 21) == CAN_MSG_COMID_ASSIGNATION) {
+						if (messageId == CAN_MSG_COMID_ASSIGNATION) {
 							// Check if the HW UUID matches
 							if (recFrame.buffer_len >= 7 && recFrame.buffer[0] == g_macAddress[0] &&
 								recFrame.buffer[1] == g_macAddress[1] && recFrame.buffer[2] == g_macAddress[2] &&
@@ -181,14 +199,16 @@ void app_main(void) // NOLINT
 
 								// Logging
 								ESP_LOGI("main", "Received ID: %d", g_ownCanComId);
-								}
+
+								continue;
+							}
 						}
 					}
 
 					// Are we in the OPERATION state?
-					else if (currState == STATE_OPERATION) {
+					if (currState == STATE_OPERATION) {
 						// Was it new sensor data?
-						if ((recFrame.header.id >> 21) == CAN_MSG_SENSOR_DATA) {
+						if (messageId == CAN_MSG_SENSOR_DATA) {
 							// Create the event
 							QueueEvent_t event;
 							event.command = NEW_SENSOR_DATA;
@@ -196,8 +216,61 @@ void app_main(void) // NOLINT
 
 							// Queue the event
 							xQueueSend(g_guiEventQueue, &event, pdMS_TO_TICKS(100));
+
+							continue;
+						}
+
+						// Was it a firmware version request?
+						if (messageId == CAN_MSG_REQUEST_FIRMWARE_VERSION) {
+							/*
+							 *	Send the firmware
+							 */
+							// Create the CAN frame buffer
+							uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * 4);
+							buffer[0] = VERSION_BETA;
+							buffer[1] = (uint8_t)*VERSION_MAJOR;
+							buffer[2] = (uint8_t)*VERSION_MINOR;
+							buffer[3] = (uint8_t)*VERSION_PATCH;
+
+							// Create the CAN frame
+							twai_frame_t* frame = generateCanFrame(CAN_MSG_REQUEST_FIRMWARE_VERSION, g_ownCanComId, &buffer, sizeof(uint8_t) * 6);
+
+							// Send the frame
+							queueCanBusMessage(frame, true, false);
+
+							ESP_LOGI("main", "Send firmware version to the Sensor Board!");
+
+							continue;
+						}
+
+						// Was it a git commit hash request?
+						if (messageId == CAN_MSG_REQUEST_COMMIT_INFORMATION) {
+							/*
+							 *	Send the commit hash information
+							 */
+							// Create the CAN frame buffer
+							uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * 8);
+							buffer[0] = (uint8_t)GIT_HASH[0];
+							buffer[1] = (uint8_t)GIT_HASH[1];
+							buffer[2] = (uint8_t)GIT_HASH[2];
+							buffer[3] = (uint8_t)GIT_HASH[3];
+							buffer[4] = (uint8_t)GIT_HASH[4];
+							buffer[5] = (uint8_t)GIT_HASH[5];
+							buffer[6] = (uint8_t)GIT_HASH[6];
+							buffer[7] = sizeof(GIT_HASH) > 7 ? 1 : 0; // If its size is longer than 7 it's a dirty commit!
+
+							// Create the CAN frame
+							twai_frame_t* frame = generateCanFrame(CAN_MSG_REQUEST_COMMIT_INFORMATION, g_ownCanComId, &buffer, sizeof(uint8_t) * 8);
+
+							// Send the frame
+							queueCanBusMessage(frame, true, false);
+
+							ESP_LOGI("main", "Send hash information to the Sensor Board!");
+
+							continue;
 						}
 					}
+
 					break;
 				}
 
