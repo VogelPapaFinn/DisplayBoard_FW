@@ -16,7 +16,11 @@ set(FILES
         "../include/Screens/LvglSpeedScreen.h"
         "Screens/LvglSpeedScreen.c"
 
-        # Global stuff
+        # Update Handler
+        "../include/UpdateHandler.h"
+        "UpdateHandler.c"
+
+        # Event Queue
         "../include/EventQueues.h"
         "EventQueues.c"
 
@@ -33,5 +37,5 @@ set(FILES
 )
 
 idf_component_register(SRCS ${FILES}
-        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_lcd_gc9a01 esp_wifi nvs_flash can statemachine
+        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_lcd_gc9a01 esp_wifi nvs_flash can app_update
         INCLUDE_DIRS "../include/")

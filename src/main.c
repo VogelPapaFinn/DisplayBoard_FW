@@ -2,15 +2,17 @@
 #include "GUI.h"
 #include "EventQueues.h"
 #include "can.h"
-#include "statemachine.h"
 #include "Version.h"
 
 // FreeRTOS includes
 #include "freertos/FreeRTOS.h"
 
 // espidf includes
+#include <UpdateHandler.h>
 #include <esp_log.h>
 #include <esp_mac.h>
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
 
 /*
  *	Defines
@@ -42,6 +44,8 @@ uint8_t g_ownCanComId = 0;
 // The MAC address
 uint8_t g_macAddress[MAC_ADDRESS_LENGTH];
 
+State_t g_currentState = STATE_INIT;
+
 /*
  *	Helper functions
 */
@@ -66,20 +70,22 @@ void buildCanComId()
 
 void broadcastUuid()
 {
-	// Create the CAN frame buffer
-	uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * 6);
-	buffer[0] = g_macAddress[0];
-	buffer[1] = g_macAddress[1];
-	buffer[2] = g_macAddress[2];
-	buffer[3] = g_macAddress[3];
-	buffer[4] = g_macAddress[4];
-	buffer[5] = g_macAddress[5];
+	// Create the CAN answer frame
+	TwaiFrame_t frame;
 
-	// Create the CAN frame
-	twai_frame_t* frame = generateCanFrame(CAN_MSG_REGISTRATION, g_ownCanComId, &buffer, sizeof(uint8_t) * 6);
+	// Set the buffer content
+	frame.buffer[0] = g_macAddress[0];
+	frame.buffer[1] = g_macAddress[1];
+	frame.buffer[2] = g_macAddress[2];
+	frame.buffer[3] = g_macAddress[3];
+	frame.buffer[4] = g_macAddress[4];
+	frame.buffer[5] = g_macAddress[5];
+
+	// Initiate the frame
+	canInitiateFrame(&frame, CAN_MSG_REGISTRATION, g_ownCanComId, 6);
 
 	// Send the frame
-	queueCanBusMessage(frame, true, false);
+	canQueueFrame(&frame);
 
 	// Logging
 	ESP_LOGI("main", "Sent HW UUID '%d-%d-%d-%d-%d-%d' to Sensor Board!", g_macAddress[0], g_macAddress[1], g_macAddress[2],
@@ -91,7 +97,19 @@ void broadcastUuid()
  */
 void app_main(void) // NOLINT
 {
+	ESP_LOGI("main", "--- --- --- --- --- --- ---");
 	ESP_LOGI("main", "Firmware Version: %s", VERSION_FULL);
+
+	// Check on which OTA partition we are
+	const esp_partition_t* partition = esp_ota_get_running_partition();
+	if (partition != NULL) {
+		ESP_LOGI("main", "Current running partition: %s", partition->label);
+		ESP_LOGI("main", "Type: %d, Subtype: %d", partition->type, partition->subtype);
+		ESP_LOGI("main", "Address: 0x%08"PRIx32, partition->address);
+		ESP_LOGI("main", "Size: 0x%08"PRIx32" bytes", partition->size);
+	} else {
+		ESP_LOGE("main", "Couldn't load OTA partition!");
+	}
 
 	// Get the MAC address
 	getMacAddress();
@@ -103,11 +121,11 @@ void app_main(void) // NOLINT
 	createEventQueues();
 
 	// Initialize and enable the can node
-	initializeCanNode(GPIO_NUM_9, GPIO_NUM_6);
-	enableCanNode();
+	canInitializeNode(GPIO_NUM_9, GPIO_NUM_6);
+	canEnableNode();
 
 	// Register the queue to the CAN bus
-	registerCanRxCbQueue(&g_mainEventQueue);
+	canRegisterRxCbQueue(&g_mainEventQueue);
 
 	// Initialize the GUI
 	guiInit();
@@ -120,9 +138,6 @@ void app_main(void) // NOLINT
 	while (true) {
 		// Wait until we get a new event in the queue
 		if (xQueueReceive(g_mainEventQueue, &queueEvent, portMAX_DELAY)) {
-			// Get current state
-			const State_t currState = getCurrentState();
-
 			// Act depending on the event
 			switch (queueEvent.command) {
 				/*
@@ -134,10 +149,10 @@ void app_main(void) // NOLINT
 					const twai_frame_t recFrame = queueEvent.canFrame;
 
 					// Get the message id
-					const uint8_t messageId = recFrame.header.id >> CAN_FRAME_HEADER_OFFSET;
+					const uint8_t messageId = recFrame.header.id >> CAN_MESSAGE_ID_OFFSET;
 
 					// Did the message come from the master?
-					if (((recFrame.header.id << (32 - CAN_FRAME_HEADER_OFFSET)) >> CAN_FRAME_HEADER_OFFSET) != 0) {
+					if ((recFrame.header.id & 0x1FFFFF) != 0) {
 						continue;
 					}
 
@@ -153,15 +168,14 @@ void app_main(void) // NOLINT
 					}
 
 					// Are we in the INIT or REGISTRATION state?
-					if (currState == STATE_INIT || currState == STATE_REGISTRATION) {
+					if (g_currentState == STATE_INIT || g_currentState == STATE_REGISTRATION) {
 						// Was it an instruction to register ourselves?
 						if (messageId == CAN_MSG_REGISTRATION) {
 							// Change the mode
-							setCurrentState(STATE_REGISTRATION);
+							g_currentState = STATE_REGISTRATION;
 
 							// Send the HW UUID
 							broadcastUuid();
-
 							continue;
 						}
 
@@ -195,7 +209,7 @@ void app_main(void) // NOLINT
 								xQueueSend(g_guiEventQueue, &event, portMAX_DELAY);
 
 								// Then enter the operation mode
-								setCurrentState(STATE_OPERATION);
+								g_currentState = STATE_OPERATION;
 
 								// Logging
 								ESP_LOGI("main", "Received ID: %d", g_ownCanComId);
@@ -206,7 +220,7 @@ void app_main(void) // NOLINT
 					}
 
 					// Are we in the OPERATION state?
-					if (currState == STATE_OPERATION) {
+					if (g_currentState == STATE_OPERATION) {
 						// Was it new sensor data?
 						if (messageId == CAN_MSG_SENSOR_DATA) {
 							// Create the event
@@ -216,30 +230,40 @@ void app_main(void) // NOLINT
 
 							// Queue the event
 							xQueueSend(g_guiEventQueue, &event, pdMS_TO_TICKS(100));
+							continue;
+						}
 
+						// Were we meant?
+						if (messageId == CAN_MSG_REQUEST_FIRMWARE_VERSION) {
+							ESP_LOGI("main", "CAN_MSG_REQUEST_FIRMWARE_VERSION, %d, %d", recFrame.buffer[0], g_ownCanComId);
+						}
+						if (*recFrame.buffer != g_ownCanComId) {
 							continue;
 						}
 
 						// Was it a firmware version request?
 						if (messageId == CAN_MSG_REQUEST_FIRMWARE_VERSION) {
+							ESP_LOGI("main", "messageId == CAN_MSG_REQUEST_FIRMWARE_VERSION");
+
 							/*
 							 *	Send the firmware
 							 */
-							// Create the CAN frame buffer
-							uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * 4);
-							buffer[0] = VERSION_BETA;
-							buffer[1] = (uint8_t)*VERSION_MAJOR;
-							buffer[2] = (uint8_t)*VERSION_MINOR;
-							buffer[3] = (uint8_t)*VERSION_PATCH;
+							// Create the CAN answer frame
+							TwaiFrame_t frame;
 
-							// Create the CAN frame
-							twai_frame_t* frame = generateCanFrame(CAN_MSG_REQUEST_FIRMWARE_VERSION, g_ownCanComId, &buffer, sizeof(uint8_t) * 6);
+							// Set the buffer content
+							frame.buffer[0] = VERSION_BETA;
+							frame.buffer[1] = (uint8_t)*VERSION_MAJOR;
+							frame.buffer[2] = (uint8_t)*VERSION_MINOR;
+							frame.buffer[3] = (uint8_t)*VERSION_PATCH;
+
+							// Initiate the frame
+							canInitiateFrame(&frame, CAN_MSG_REQUEST_FIRMWARE_VERSION, g_ownCanComId, 4);
 
 							// Send the frame
-							queueCanBusMessage(frame, true, false);
+							canQueueFrame(&frame);
 
 							ESP_LOGI("main", "Send firmware version to the Sensor Board!");
-
 							continue;
 						}
 
@@ -248,24 +272,89 @@ void app_main(void) // NOLINT
 							/*
 							 *	Send the commit hash information
 							 */
-							// Create the CAN frame buffer
-							uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * 8);
-							buffer[0] = (uint8_t)GIT_HASH[0];
-							buffer[1] = (uint8_t)GIT_HASH[1];
-							buffer[2] = (uint8_t)GIT_HASH[2];
-							buffer[3] = (uint8_t)GIT_HASH[3];
-							buffer[4] = (uint8_t)GIT_HASH[4];
-							buffer[5] = (uint8_t)GIT_HASH[5];
-							buffer[6] = (uint8_t)GIT_HASH[6];
-							buffer[7] = sizeof(GIT_HASH) > 7 ? 1 : 0; // If its size is longer than 7 it's a dirty commit!
+							// Create the CAN answer frame
+							TwaiFrame_t frame;
 
-							// Create the CAN frame
-							twai_frame_t* frame = generateCanFrame(CAN_MSG_REQUEST_COMMIT_INFORMATION, g_ownCanComId, &buffer, sizeof(uint8_t) * 8);
+							// Set the buffer content
+							frame.buffer[0] = (uint8_t)GIT_HASH[0];
+							frame.buffer[1] = (uint8_t)GIT_HASH[1];
+							frame.buffer[2] = (uint8_t)GIT_HASH[2];
+							frame.buffer[3] = (uint8_t)GIT_HASH[3];
+							frame.buffer[4] = (uint8_t)GIT_HASH[4];
+							frame.buffer[5] = (uint8_t)GIT_HASH[5];
+							frame.buffer[6] = (uint8_t)GIT_HASH[6];
+							frame.buffer[7] = sizeof(GIT_HASH) > 7 ? 1 : 0; // If its size is longer than 7 it's a dirty commit!
+
+							// Initiate the frame
+							canInitiateFrame(&frame, CAN_MSG_REQUEST_COMMIT_INFORMATION, g_ownCanComId, 8);
 
 							// Send the frame
-							queueCanBusMessage(frame, true, false);
+							canQueueFrame(&frame);
 
 							ESP_LOGI("main", "Send hash information to the Sensor Board!");
+							continue;
+						}
+
+						// Is it the initialization of the update
+						if (messageId == CAN_MSG_INIT_UPDATE_MODE) {
+							// Get the update file size
+							uint32_t updateFileSize = recFrame.buffer[1] << 24;
+							updateFileSize += recFrame.buffer[2] << 16;
+							updateFileSize += recFrame.buffer[3] << 8;
+							updateFileSize += recFrame.buffer[4];
+
+							ESP_LOGI("main", "Received Update File Size: %d", updateFileSize);
+
+							// Init the update handler
+							if (!updateHandlerInitialize(updateFileSize)) {
+								ESP_LOGW("main", "Something failed in the update handler. Cant initialize update mode");
+
+								continue;
+							}
+
+							// Create the CAN answer frame
+							TwaiFrame_t frame;
+
+							// Initiate the frame
+							canInitiateFrame(&frame, CAN_MSG_INIT_UPDATE_MODE, g_ownCanComId, 0);
+
+							// Send the frame
+							canQueueFrame(&frame);
+
+							continue;
+						}
+
+						// Writing of the update file
+						if (messageId == CAN_MSG_TRANSMIT_UPDATE_FILE) {
+							updateWriteToBuffer(recFrame.buffer + 1, recFrame.header.dlc - 1);
+
+							// Create the CAN answer frame
+							TwaiFrame_t frame;
+
+							// Initiate the frame
+							canInitiateFrame(&frame, CAN_MSG_TRANSMIT_UPDATE_FILE, g_ownCanComId, 0);
+
+							// Send the frame
+							canQueueFrame(&frame);
+
+							continue;
+						}
+
+						// Writing of the update file
+						if (messageId == CAN_MSG_EXECUTE_UPDATE) {
+							bool success = updateExecute();
+
+							// Create the CAN answer frame
+							TwaiFrame_t frame;
+
+							// Set the buffer content
+							frame.buffer[0] = (uint8_t)success;
+
+							// Initiate the frame
+							canInitiateFrame(&frame, CAN_MSG_EXECUTE_UPDATE, g_ownCanComId, 1);
+
+							// Send the frame
+							canQueueFrame(&frame);
 
 							continue;
 						}
