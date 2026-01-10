@@ -9,6 +9,9 @@
 //! \brief The Queue used to send events to the GUI
 extern QueueHandle_t g_guiEventQueue;
 
+//! \brief The Queue used to send events to the CAN update handler
+extern QueueHandle_t g_canUpdaterEventQueue;
+
 //! \brief The Queue used to send events to the main application (main.c)
 extern QueueHandle_t g_mainEventQueue;
 

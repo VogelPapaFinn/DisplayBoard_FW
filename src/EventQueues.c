@@ -24,6 +24,14 @@ bool createEventQueues()
 		return false;
 	}
 
+	// Create the event Queue for the CanUpdater
+	g_canUpdaterEventQueue = xQueueCreate(10, sizeof(QueueEvent_t));
+	if (g_canUpdaterEventQueue == 0) {
+		ESP_LOGE("EventQueues", "Couldn't create canUpdaterEventQueue");
+
+		return false;
+	}
+
 	// Create the main Queue for the GUI
 	g_mainEventQueue = xQueueCreate(5, sizeof(QueueEvent_t));
 	if (g_mainEventQueue == 0) {

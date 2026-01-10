@@ -17,8 +17,8 @@ set(FILES
         "Screens/LvglSpeedScreen.c"
 
         # Update Handler
-        "../include/UpdateHandler.h"
-        "UpdateHandler.c"
+        "../include/UpdateHandlers/CanUpdater.h"
+        "UpdateHandlers/CanUpdater.c"
 
         # Event Queue
         "../include/EventQueues.h"
