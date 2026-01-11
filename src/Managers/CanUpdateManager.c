@@ -1,6 +1,8 @@
-#include "../include/UpdateHandlers/CanUpdater.h"
+#include "../../include/Managers/CanUpdateManager.h"
 
 // Project includes
+#include "GUI.h"
+#include "Managers/ManagerUtils.h"
 #include "can.h"
 
 // C includes
@@ -26,7 +28,6 @@
 static TaskHandle_t g_taskHandle;
 
 //! \brief Bool indicating if an update is in progress
-static bool g_inUpdateProcedure = false;
 static uint32_t g_sizeB = 0;
 static uint8_t* g_buffer = NULL;
 static uint32_t g_block = 0;
@@ -58,9 +59,9 @@ static void canTask(void* p_param)
 	QueueEvent_t queueEvent;
 	while (true) {
 		// Wait until we get a new event in the queue
-		if (xQueueReceive(g_canUpdaterEventQueue, &queueEvent, portMAX_DELAY)) {
+		if (xQueueReceive(g_canUpdateManagerQueue, &queueEvent, portMAX_DELAY)) {
 			// Skip if it's not a new can message, or it's not from the master
-			if (queueEvent.command != RECEIVED_NEW_CAN_MESSAGE || (queueEvent.canFrame.header.id & 0x1FFFFF) != 0) {
+			if (queueEvent.command != RECEIVED_NEW_CAN_FRAME || (queueEvent.canFrame.header.id & 0x1FFFFF) != 0) {
 				continue;
 			}
 
@@ -68,7 +69,7 @@ static void canTask(void* p_param)
 			const twai_frame_t rxFrame = queueEvent.canFrame;
 
 			// Get the message id
-			const uint8_t messageId = rxFrame.header.id >> CAN_MESSAGE_ID_OFFSET;
+			const uint8_t messageId = rxFrame.header.id >> CAN_FRAME_ID_OFFSET;
 
 			// Act depending on the CAN message
 			if (messageId == CAN_MSG_PREPARE_UPDATE) {
@@ -157,7 +158,10 @@ static bool prepareUpdate()
 	memset(g_buffer, 0, g_sizeB);
 
 	// We are now in an update procedure
-	g_inUpdateProcedure = true;
+	g_canUpdateActive = true;
+
+	// Stop the GUI from refreshing to boost performance
+	guiDeactivateRefreshing();
 
 	return true;
 }
@@ -219,7 +223,7 @@ static bool executeUpdate()
 		ESP_LOGE("UpdateHandler", "Couldn't initiate update partition");
 
 		// Update failed
-		g_inUpdateProcedure = false;
+		g_canUpdateActive = false;
 		return false;
 	}
 
@@ -240,7 +244,7 @@ static bool executeUpdate()
 		esp_ota_abort(updateHandle);
 
 		// Update failed
-		g_inUpdateProcedure = false;
+		g_canUpdateActive = false;
 		return false;
 	}
 
@@ -250,15 +254,18 @@ static bool executeUpdate()
 		esp_ota_abort(updateHandle);
 
 		// Update failed
-		g_inUpdateProcedure = false;
+		g_canUpdateActive = false;
 		return false;
 	}
 
 	ESP_LOGI("UpdateHandler", "Wrote %d bytes to partition %s", g_sizeB, updatePartition->label);
 	free(g_buffer);
 
+	// Reactivate the refreshing of the GUI
+	guiActivateRefreshing();
+
 	// Update finished
-	g_inUpdateProcedure = false;
+	g_canUpdateActive = false;
 
 	return true;
 }
@@ -266,10 +273,10 @@ static bool executeUpdate()
 /*
  *	Public function implementations
  */
-bool canUpdaterInit()
+bool canUpdateManagerInit()
 {
 	// Register to the CAN rx cb
-	if (!canRegisterRxCbQueue(&g_canUpdaterEventQueue)) {
+	if (!canRegisterRxCbQueue(&g_canUpdateManagerQueue)) {
 		ESP_LOGE("DisplayUpdate", "Couldn't register rx cb queue");
 
 		return false;

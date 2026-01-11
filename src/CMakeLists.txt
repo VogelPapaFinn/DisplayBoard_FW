@@ -16,9 +16,15 @@ set(FILES
         "../include/Screens/LvglSpeedScreen.h"
         "Screens/LvglSpeedScreen.c"
 
-        # Update Handler
-        "../include/UpdateHandlers/CanUpdater.h"
-        "UpdateHandlers/CanUpdater.c"
+        # Managers
+        "../include/Managers/ManagerUtils.h"
+        "Managers/ManagerUtils.c"
+        "../include/Managers/RegistrationManager.h"
+        "Managers/RegistrationManager.c"
+        "../include/Managers/OperationManager.h"
+        "Managers/OperationManager.c"
+        "../include/Managers/CanUpdateManager.h"
+        "Managers/CanUpdateManager.c"
 
         # Event Queue
         "../include/EventQueues.h"

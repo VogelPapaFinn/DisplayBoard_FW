@@ -6,21 +6,27 @@
 // FreeRTOS include
 #include "freertos/FreeRTOS.h"
 
+//! \brief The Queue used to send events to the registration manager
+extern QueueHandle_t g_registrationManagerQueue;
+
+//! \brief The Queue used to send events to the operation manager
+extern QueueHandle_t g_operationManagerCanQueue;
+
+//! \brief The Queue used to send events to the CAN update handler
+extern QueueHandle_t g_canUpdateManagerQueue;
+
 //! \brief The Queue used to send events to the GUI
 extern QueueHandle_t g_guiEventQueue;
 
-//! \brief The Queue used to send events to the CAN update handler
-extern QueueHandle_t g_canUpdaterEventQueue;
-
 //! \brief The Queue used to send events to the main application (main.c)
-extern QueueHandle_t g_mainEventQueue;
+extern QueueHandle_t g_mainQueue;
 
 //! \brief A typedef enum that contains commands for all Queues
 typedef enum
 {
 	/* CAN */
 	CAN_DRIVER_CRASHED,
-	RECEIVED_NEW_CAN_MESSAGE,
+	RECEIVED_NEW_CAN_FRAME,
 
 	/* GUI */
 	NEW_SENSOR_DATA,

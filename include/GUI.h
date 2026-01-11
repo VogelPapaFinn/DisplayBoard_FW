@@ -11,4 +11,8 @@
  */
 bool guiInit();
 
+void guiActivateRefreshing();
+
+void guiDeactivateRefreshing();
+
 bool guiDisplayScreen(Screen_t screen);

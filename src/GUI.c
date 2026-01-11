@@ -46,38 +46,36 @@ typedef void (*EventHandlerFunction_t)(const QueueEvent_t* p_queueEvent);
 /*
  *	Prototypes
  */
-void flushPixelsToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap);
+static void flushPixelsToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap);
 
 //! \brief Task which is needed for lvgl to work
 //! \param p_params void* needed for FreeRTOS to accept this function as task!
-void IRAM_ATTR lvglUpdateTask(void* p_params);
+static void IRAM_ATTR lvglUpdateTask(void* p_params);
 
-void handleNewSensorData(const QueueEvent_t* p_queueEvent);
+static void handleNewSensorData(const QueueEvent_t* p_queueEvent);
 
 /*
  *	Private variables
  */
-// static const EventHandlerFunction_t g_eventHandlers[] = {
-// 	[NEW_SENSOR_DATA] = handleNewSensorData,
-// };
+static bool g_refresh = true;
 
-esp_lcd_panel_io_handle_t g_lcdPanelIoHandle = NULL;
-esp_lcd_panel_handle_t g_lcdPanelHandle = NULL;
+static esp_lcd_panel_io_handle_t g_lcdPanelIoHandle = NULL;
+static esp_lcd_panel_handle_t g_lcdPanelHandle = NULL;
 
-SemaphoreHandle_t g_lvglGuiSemaphore = NULL;
-SemaphoreHandle_t g_lvglDrawSemaphore = NULL;
+static SemaphoreHandle_t g_lvglGuiSemaphore = NULL;
+static SemaphoreHandle_t g_lvglDrawSemaphore = NULL;
 
-lv_display_t* g_lvglDisplay = NULL;
-uint16_t* g_lvglFrameBuffer1 = NULL;
-uint16_t* g_lvglFrameBuffer2 = NULL;
+static lv_display_t* g_lvglDisplay = NULL;
+static uint16_t* g_lvglFrameBuffer1 = NULL;
+static uint16_t* g_lvglFrameBuffer2 = NULL;
 
-bool g_lvglFirstFrameDrawn = false;
-Screen_t g_currentScreen = SCREEN_UNKNOWN;
+static bool g_lvglFirstFrameDrawn = false;
+static Screen_t g_currentScreen = SCREEN_UNKNOWN;
 
 /*
  *	ISRs and Tasks
  */
-void flushPixelsToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap)
+static void flushPixelsToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap)
 {
 	// Swap the color channels as needed
 	lv_draw_sw_rgb565_swap(p_pxMap, (p_area->x2 + 1 - p_area->x1) * (p_area->y2 + 1 - p_area->y1)); // NOLINT
@@ -102,7 +100,7 @@ void flushPixelsToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint
 	lv_display_flush_ready(g_lvglDisplay);
 }
 
-void lvglUpdateTask(void* p_params)
+static void lvglUpdateTask(void* p_params)
 {
 	while (true) {
 		// Try to get the semaphore
@@ -119,12 +117,16 @@ void lvglUpdateTask(void* p_params)
 	}
 }
 
-void guiEventQueueTask()
+static void guiEventQueueTask()
 {
 	QueueEvent_t queueEvent;
 	while (true) {
 		// Wait until we get a new event
 		if (xQueueReceive(g_guiEventQueue, &queueEvent, portMAX_DELAY)) {
+			if (!g_refresh) {
+				continue;
+			}
+
 			switch (queueEvent.command) {
 				case DISPLAY_TEMPERATURE_SCREEN:
 					{
@@ -154,7 +156,7 @@ void guiEventQueueTask()
 /*
  *	Private functions
  */
-bool initDisplay()
+static bool initDisplay()
 {
 	// Create the SPI config for the LCD
 	const esp_lcd_panel_io_spi_config_t lcdPanelIoConfig = {
@@ -221,7 +223,7 @@ bool initDisplay()
 	return true;
 }
 
-bool initLvgl()
+static bool initLvgl()
 {
 	// Create the needed semaphores
 	g_lvglGuiSemaphore = xSemaphoreCreateMutex();
@@ -274,7 +276,7 @@ bool initLvgl()
 	return true;
 }
 
-void handleNewSensorData(const QueueEvent_t* p_queueEvent)
+static void handleNewSensorData(const QueueEvent_t* p_queueEvent)
 {
 	if (p_queueEvent == NULL || p_queueEvent->canFrame.buffer == NULL || g_currentScreen == SCREEN_UNKNOWN) {
 		return;
@@ -375,6 +377,16 @@ bool guiInit()
 	}
 
 	return true;
+}
+
+void guiActivateRefreshing()
+{
+	g_refresh = true;
+}
+
+void guiDeactivateRefreshing()
+{
+	g_refresh = false;
 }
 
 bool guiDisplayScreen(const Screen_t screen)
