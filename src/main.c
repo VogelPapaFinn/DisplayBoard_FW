@@ -69,20 +69,17 @@ void app_main(void) // NOLINT
 		}
 
 		// Skip if it's not a new can frame, or it's not from the master
-		if (queueEvent.command != RECEIVED_NEW_CAN_FRAME || (queueEvent.canFrame.header.id & 0x1FFFFF) != 0) {
+		if (queueEvent.command != RECEIVED_NEW_CAN_FRAME || (queueEvent.frameId & 0x1FFFFF) != 0) {
 			continue;
 		}
 
-		// Get the frame
-		const twai_frame_t rxFrame = queueEvent.canFrame;
-
 		// Get the frame id
-		const uint8_t frameId = rxFrame.header.id >> CAN_FRAME_ID_OFFSET;
+		const uint8_t frameId = queueEvent.frameId >> CAN_FRAME_ID_OFFSET;
 
 		// Should we restart?
 		if (frameId == CAN_MSG_DISPLAY_RESTART) {
 			// Were we meant?
-			if (rxFrame.buffer[0] != g_ownCanComId) {
+			if (queueEvent.frameBuffer[0] != g_ownCanComId) {
 				continue;
 			}
 

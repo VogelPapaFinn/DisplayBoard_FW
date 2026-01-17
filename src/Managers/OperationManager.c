@@ -30,7 +30,7 @@ static TaskHandle_t g_taskHandle;
 static void canTask(void* p_param)
 {
 	// Wait for new queue events
-	twai_frame_t rxFrame;
+	TwaiFrame_t rxFrame;
 	while (true) {
 		// Wait until we get a new event in the queue
 		if (xQueueReceive(g_operationManagerCanQueue, &rxFrame, portMAX_DELAY) != pdPASS) {
@@ -38,12 +38,12 @@ static void canTask(void* p_param)
 		}
 
 		// Skip if it's not from the master
-		if ((rxFrame.header.id & 0x1FFFFF) != 0) {
+		if ((rxFrame.espidfFrame.header.id & 0x1FFFFF) != 0) {
 			continue;
 		}
 
 		// Get the frame id
-		const uint8_t frameId = rxFrame.header.id >> CAN_FRAME_ID_OFFSET;
+		const uint8_t frameId = rxFrame.espidfFrame.header.id >> CAN_FRAME_ID_OFFSET;
 
 		/*
 		 *	Broadcasts
@@ -53,7 +53,10 @@ static void canTask(void* p_param)
 			// Create the event
 			QueueEvent_t event;
 			event.command = NEW_SENSOR_DATA;
-			event.canFrame = rxFrame;
+			memcpy(event.frameBuffer, rxFrame.buffer, CAN_FRAME_MAX_BUFFER_LENGTH_B);
+			event.frameDlc = rxFrame.espidfFrame.header.dlc;
+			event.frameId = rxFrame.espidfFrame.header.id;
+
 
 			// Queue the event
 			xQueueSend(g_guiEventQueue, &event, pdMS_TO_TICKS(100));
@@ -64,7 +67,8 @@ static void canTask(void* p_param)
 		 *	Com id specific frames
 		 */
 		// Skip if we were not meant
-		if (rxFrame.header.dlc == 0 || (rxFrame.header.dlc > 0 && *rxFrame.buffer != g_ownCanComId)) {
+		if (rxFrame.espidfFrame.header.dlc == 0 ||
+			(rxFrame.espidfFrame.header.dlc > 0 && *rxFrame.buffer != g_ownCanComId)) {
 			continue;
 		}
 

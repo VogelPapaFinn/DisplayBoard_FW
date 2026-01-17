@@ -56,92 +56,91 @@ static bool executeUpdate();
 static void canTask(void* p_param)
 {
 	// Wait for new queue events
-	QueueEvent_t queueEvent;
+	TwaiFrame_t rxFrame;
 	while (true) {
 		// Wait until we get a new event in the queue
-		if (xQueueReceive(g_canUpdateManagerQueue, &queueEvent, portMAX_DELAY)) {
-			// Skip if it's not a new can message, or it's not from the master
-			if (queueEvent.command != RECEIVED_NEW_CAN_FRAME || (queueEvent.canFrame.header.id & 0x1FFFFF) != 0) {
-				continue;
-			}
+		if (xQueueReceive(g_canUpdateManagerQueue, &rxFrame, portMAX_DELAY) != pdPASS) {
+			continue;
+		}
 
-			// Get the frame
-			const twai_frame_t rxFrame = queueEvent.canFrame;
+		// Skip if it's not from the master
+		if ((rxFrame.espidfFrame.header.id & 0x1FFFFF) != 0) {
+			continue;
+		}
 
-			// Get the message id
-			const uint8_t messageId = rxFrame.header.id >> CAN_FRAME_ID_OFFSET;
+		// Get the message id
+		const uint8_t frameId = rxFrame.espidfFrame.header.id >> CAN_FRAME_ID_OFFSET;
 
-			// Act depending on the CAN message
-			if (messageId == CAN_MSG_PREPARE_UPDATE) {
-				// Get the update file size
-				g_sizeB = rxFrame.buffer[1] << 24;
-				g_sizeB += rxFrame.buffer[2] << 16;
-				g_sizeB += rxFrame.buffer[3] << 8;
-				g_sizeB += rxFrame.buffer[4];
+		// Act depending on the CAN message
+		if (frameId == CAN_MSG_PREPARE_UPDATE) {
+			// Get the update file size
+			g_sizeB = rxFrame.buffer[1] << 24;
+			g_sizeB += rxFrame.buffer[2] << 16;
+			g_sizeB += rxFrame.buffer[3] << 8;
+			g_sizeB += rxFrame.buffer[4];
 
-				// Logging
-				ESP_LOGI("main", "Received Update File Size: %d", g_sizeB);
+			// Logging
+			ESP_LOGI("main", "Received Update File Size: %d", g_sizeB);
 
-				// Init the update handler
-				if (!prepareUpdate()) {
-					ESP_LOGW("main", "Something failed, cant initialize update mode");
-
-					continue;
-				}
-
-				// Create the CAN answer frame
-				TwaiFrame_t frame;
-
-				// Initiate the frame
-				canInitiateFrame(&frame, CAN_MSG_PREPARE_UPDATE, 0);
-
-				// Send the frame
-				canQueueFrame(&frame);
+			// Init the update handler
+			if (!prepareUpdate()) {
+				ESP_LOGW("main", "Something failed, cant initialize update mode");
 
 				continue;
 			}
 
-			// Block of the update file
-			if (messageId == CAN_MSG_TRANSMIT_UPDATE_FILE) {
-				writeFileBlock(rxFrame.buffer + 1, rxFrame.header.dlc - 1);
+			// Create the CAN answer frame
+			TwaiFrame_t frame;
 
-				// Create the CAN answer frame
-				TwaiFrame_t frame;
+			// Initiate the frame
+			canInitiateFrame(&frame, CAN_MSG_PREPARE_UPDATE, 0);
 
-				// Initiate the frame
-				canInitiateFrame(&frame, CAN_MSG_TRANSMIT_UPDATE_FILE, 0);
+			// Send the frame
+			canQueueFrame(&frame);
 
-				// Send the frame
-				canQueueFrame(&frame);
+			continue;
+		}
 
-				continue;
-			}
+		// Block of the update file
+		if (frameId == CAN_MSG_TRANSMIT_UPDATE_FILE) {
+			writeFileBlock(rxFrame.buffer + 1, rxFrame.espidfFrame.header.dlc - 1);
 
-			// Execute the update
-			if (messageId == CAN_MSG_EXECUTE_UPDATE) {
-				const bool success = executeUpdate();
+			// Create the CAN answer frame
+			TwaiFrame_t frame;
 
-				// Create the CAN answer frame
-				TwaiFrame_t frame;
+			// Initiate the frame
+			canInitiateFrame(&frame, CAN_MSG_TRANSMIT_UPDATE_FILE, 0);
 
-				// Set the buffer content
-				frame.buffer[0] = (uint8_t)success;
+			// Send the frame
+			canQueueFrame(&frame);
 
-				// Initiate the frame
-				canInitiateFrame(&frame, CAN_MSG_EXECUTE_UPDATE, 1);
+			continue;
+		}
 
-				// Send the frame
-				canQueueFrame(&frame);
+		// Execute the update
+		if (frameId == CAN_MSG_EXECUTE_UPDATE) {
+			const bool success = executeUpdate();
 
-				continue;
-			}
+			// Create the CAN answer frame
+			TwaiFrame_t frame;
+
+			// Set the buffer content
+			frame.buffer[0] = (uint8_t)success;
+
+			// Initiate the frame
+			canInitiateFrame(&frame, CAN_MSG_EXECUTE_UPDATE, 1);
+
+			// Send the frame
+			canQueueFrame(&frame);
+
+			continue;
 		}
 	}
 }
 
 /*
  *	Private functions
-*/
+ */
 static bool prepareUpdate()
 {
 	// Reset the file block
@@ -182,7 +181,8 @@ static void writeFileBlock(const uint8_t* p_bytes, const uint8_t amount)
 
 	// Overflow check
 	if (s_byteIndex >= g_sizeB || s_byteIndex + amount > g_sizeB) {
-		ESP_LOGE("UpdateHandler", "Update Buffer Overflow in block %d, byte index: %d, amount: %d, update size: %ld", g_block, s_byteIndex, amount, g_sizeB);
+		ESP_LOGE("UpdateHandler", "Update Buffer Overflow in block %d, byte index: %d, amount: %d, update size: %ld",
+				 g_block, s_byteIndex, amount, g_sizeB);
 		return;
 	}
 
@@ -195,8 +195,7 @@ static void writeFileBlock(const uint8_t* p_bytes, const uint8_t amount)
 
 	// Logging
 	if (g_block % 1000 == 0 || amount != UPDATE_PART_SIZE_B) {
-		ESP_LOGI("UpdateHandler", "Block %d: Wrote %d bytes to the update file buffer", g_block,
-				 amount);
+		ESP_LOGI("UpdateHandler", "Block %d: Wrote %d bytes to the update file buffer", g_block, amount);
 	}
 }
 

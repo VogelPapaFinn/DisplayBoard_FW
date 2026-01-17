@@ -30,9 +30,9 @@ typedef enum
 
 	/* GUI */
 	NEW_SENSOR_DATA,
-    DISPLAY_TEMPERATURE_SCREEN,
-    DISPLAY_SPEED_SCREEN,
-    DISPLAY_RPM_SCREEN
+	DISPLAY_TEMPERATURE_SCREEN,
+	DISPLAY_SPEED_SCREEN,
+	DISPLAY_RPM_SCREEN
 } QueueCommand_t;
 
 //! \brief A typedef struct which is used in the event queues
@@ -41,8 +41,14 @@ typedef struct
 	//! \brief The command of the event
 	QueueCommand_t command;
 
-  //! \brief An optional CAN frame
-	twai_frame_t canFrame;
+	//! \brief An optional CAN frame Id
+	uint8_t frameId;
+
+	//! \brief An optional CAN frame dlc
+	uint8_t frameDlc;
+
+	//! \brief An optional CAN frame buffer
+	uint8_t frameBuffer[8];
 } QueueEvent_t;
 
 //! \brief Creates the event queues

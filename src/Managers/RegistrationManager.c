@@ -47,7 +47,7 @@ static uint8_t g_macAddress[MAC_ADDRESS_LENGTH];
 static void canTask(void* p_param)
 {
 	// Wait for new queue events
-	twai_frame_t rxFrame;
+	TwaiFrame_t rxFrame;
 	while (true) {
 		// Wait until we get a new event in the queue
 		if (xQueueReceive(g_registrationManagerQueue, &rxFrame, portMAX_DELAY) != pdPASS) {
@@ -55,12 +55,12 @@ static void canTask(void* p_param)
 		}
 
 		// Skip if it's not from the master
-		if ((rxFrame.header.id & 0x1FFFFF) != 0) {
+		if ((rxFrame.espidfFrame.header.id & 0x1FFFFF) != 0) {
 			continue;
 		}
 
 		// Get the frame id
-		const uint8_t frameId = rxFrame.header.id >> CAN_FRAME_ID_OFFSET;
+		const uint8_t frameId = rxFrame.espidfFrame.header.id >> CAN_FRAME_ID_OFFSET;
 
 		/*
 		 *	Broadcasts
@@ -76,7 +76,7 @@ static void canTask(void* p_param)
 		// Was it a new ID?
 		if (frameId == CAN_MSG_COMID_ASSIGNATION) {
 			// Check if the HW UUID matches
-			if (rxFrame.header.dlc < 7 || !doesMacMatch(rxFrame.buffer)) {
+			if (rxFrame.espidfFrame.header.dlc < 7 || !doesMacMatch(rxFrame.buffer)) {
 				continue;
 			}
 
@@ -144,8 +144,8 @@ static void broadcastUuid()
 	canQueueFrame(&frame);
 
 	// Logging
-	ESP_LOGI("main", "Sent HW UUID '%d-%d-%d-%d-%d-%d' to Sensor Board!", g_macAddress[0], g_macAddress[1], g_macAddress[2],
-			   g_macAddress[3], g_macAddress[4], g_macAddress[5]);
+	ESP_LOGI("main", "Sent HW UUID '%d-%d-%d-%d-%d-%d' to Sensor Board!", g_macAddress[0], g_macAddress[1],
+			 g_macAddress[2], g_macAddress[3], g_macAddress[4], g_macAddress[5]);
 }
 
 static void pullMacAddress()

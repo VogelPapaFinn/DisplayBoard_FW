@@ -278,26 +278,23 @@ static bool initLvgl()
 
 static void handleNewSensorData(const QueueEvent_t* p_queueEvent)
 {
-	if (p_queueEvent == NULL || p_queueEvent->canFrame.buffer == NULL || g_currentScreen == SCREEN_UNKNOWN) {
+	if (g_currentScreen == SCREEN_UNKNOWN) {
 		return;
 	}
 
-	// Get the message
-	const uint8_t* frameBuffer = p_queueEvent->canFrame.buffer;
-
 	// Get the oil pressure
-	const bool oilPressure = *(frameBuffer + 5);
+	const bool oilPressure = p_queueEvent->frameBuffer[5];
 
 	// Act depending on the current screen
 	switch (g_currentScreen) {
 		case SCREEN_TEMPERATURE:
 			{
 				// Set the temperature
-				const uint8_t waterTemp = *(frameBuffer + 4);
+				const uint8_t waterTemp = p_queueEvent->frameBuffer[4];
 				guiSetWaterTemp(waterTemp, &g_lvglGuiSemaphore);
 
 				// Set the fuel level in %
-				const uint8_t fuelLevel = *(frameBuffer + 3);
+				const uint8_t fuelLevel = p_queueEvent->frameBuffer[3];
 				guiSetFuelLevel(fuelLevel, &g_lvglGuiSemaphore);
 
 				break;
@@ -305,11 +302,11 @@ static void handleNewSensorData(const QueueEvent_t* p_queueEvent)
 		case SCREEN_SPEED:
 			{
 				// Set the speed
-				const uint8_t speedKmh = *(frameBuffer + 0);
+				const uint8_t speedKmh = p_queueEvent->frameBuffer[0];
 				guiSetSpeed(speedKmh, &g_lvglGuiSemaphore);
 
 				// Get the status of the right indicator
-				const bool indicatorActive = *(frameBuffer + 7);
+				const bool indicatorActive = p_queueEvent->frameBuffer[7];
 				guiSetRightIndicatorActive((bool)indicatorActive, &g_lvglGuiSemaphore);
 
 				break;
@@ -317,13 +314,13 @@ static void handleNewSensorData(const QueueEvent_t* p_queueEvent)
 		case SCREEN_RPM:
 			{
 				// Set the rpm
-				const uint16_t lowerRpmByte = *(frameBuffer + 2);
-				const uint16_t upperRpmByte = *(frameBuffer + 1) << 8;
+				const uint16_t lowerRpmByte = p_queueEvent->frameBuffer[2];
+				const uint16_t upperRpmByte = p_queueEvent->frameBuffer[1] << 8;
 				const uint16_t rpm = lowerRpmByte + upperRpmByte;
 				guiSetRpm(rpm, &g_lvglGuiSemaphore);
 
 				// Get the status of the left indicator
-				const bool indicatorActive = *(frameBuffer + 6);
+				const bool indicatorActive = p_queueEvent->frameBuffer[6];
 				guiSetLeftIndicatorActive((bool)indicatorActive, &g_lvglGuiSemaphore);
 
 				break;

@@ -1,5 +1,6 @@
 // Project includes
 #include "EventQueues.h"
+#include "can.h"
 
 // espidf includes
 #include <esp_log.h>
@@ -23,25 +24,25 @@ QueueHandle_t g_mainQueue = NULL;
 bool createEventQueues()
 {
 	// Create the event Queue for the registration manager
-	g_registrationManagerQueue = xQueueCreate(10, sizeof(QueueEvent_t));
+	g_registrationManagerQueue = xQueueCreate(10, sizeof(TwaiFrame_t));
 	if (g_registrationManagerQueue == 0) {
-		ESP_LOGE("EventQueues", "Couldn't create event queue for the registration manager");
+		ESP_LOGE("EventQueues", "Couldn't create can queue for the registration manager");
 
 		return false;
 	}
 
 	// Create the event Queue for the operation manager
-	g_operationManagerCanQueue = xQueueCreate(10, sizeof(QueueEvent_t));
+	g_operationManagerCanQueue = xQueueCreate(10, sizeof(TwaiFrame_t));
 	if (g_operationManagerCanQueue == 0) {
-		ESP_LOGE("EventQueues", "Couldn't create event queue for the operation manager");
+		ESP_LOGE("EventQueues", "Couldn't create can queue for the operation manager");
 
 		return false;
 	}
 
-	// Create the event Queue for the CanUpdater
-	g_canUpdateManagerQueue = xQueueCreate(10, sizeof(QueueEvent_t));
+	// Create the can Queue for the CanUpdater
+	g_canUpdateManagerQueue = xQueueCreate(10, sizeof(TwaiFrame_t));
 	if (g_canUpdateManagerQueue == 0) {
-		ESP_LOGE("EventQueues", "Couldn't create canUpdaterEventQueue");
+		ESP_LOGE("EventQueues", "Couldn't create can queue for the can update manager");
 
 		return false;
 	}

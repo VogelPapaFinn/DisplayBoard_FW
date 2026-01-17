@@ -1,7 +1,7 @@
 #pragma once
 
 // C includes
-#include <stdbool.h>
+#include "stdbool.h"
 
 /*
  *	Public functions
