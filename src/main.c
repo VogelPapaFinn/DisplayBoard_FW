@@ -76,6 +76,19 @@ void app_main(void) // NOLINT
 		// Get the frame id
 		const uint8_t frameId = queueEvent.frameId >> CAN_FRAME_ID_OFFSET;
 
+		// The CAN driver crashed
+		if (queueEvent.command == CAN_DRIVER_CRASHED) {
+			if (canRecoverDriver() == ESP_OK) {
+				ESP_LOGI("main", "Recovered CAN driver");
+
+				continue;
+			}
+
+			ESP_LOGE("main", "Couldn't recover CAN driver");
+
+			continue;
+		}
+
 		// Should we restart?
 		if (frameId == CAN_MSG_DISPLAY_RESTART) {
 			// Were we meant?
