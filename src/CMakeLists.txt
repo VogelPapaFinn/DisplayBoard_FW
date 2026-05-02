@@ -2,34 +2,10 @@ set(CMAKE_C_STANDARD 23)
 
 set(FILES
         # Start of Application
-        "main.c"
+        "main.cpp"
 
-        # GUI
-        "../include/GUI.h"
-        "GUI.c"
-
-        # Screens
-        "../include/Screens/LvglTemperatureScreen.h"
-        "Screens/LvglTemperatureScreen.c"
-        "../include/Screens/LvglRpmScreen.h"
-        "Screens/LvglRpmScreen.c"
-        "../include/Screens/LvglSpeedScreen.h"
-        "Screens/LvglSpeedScreen.c"
-
-        # Managers
-        "../include/Managers/ManagerUtils.h"
-        "Managers/ManagerUtils.c"
-        "../include/Managers/RegistrationManager.h"
-        "Managers/RegistrationManager.c"
-        "../include/Managers/OperationManager.h"
-        "Managers/OperationManager.c"
-        "../include/Managers/CanUpdateManager.h"
-        "Managers/CanUpdateManager.c"
-
-        # Event Queue
-        "../include/EventQueues.h"
-        "EventQueues.c"
-
+        # Drivers
+        "Driver/ST77916.cpp"
 
         # *** RESOURCES *** #
         # Fonts
@@ -43,5 +19,5 @@ set(FILES
 )
 
 idf_component_register(SRCS ${FILES}
-        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_lcd_gc9a01 esp_wifi nvs_flash can app_update
+        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_wifi can app_update esp_lcd_st77916 filesystem
         INCLUDE_DIRS "../include/")
