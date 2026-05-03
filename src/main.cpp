@@ -12,6 +12,7 @@ extern "C" void app_main(void)
 	lcd.setBacklightLevel(50);
 
 	Gui gui(&lcd);
+	gui.setScreen(Gui::Screen::TEMPERATURE);
 
 	while (true) {
 		vTaskDelay(pdMS_TO_TICKS(10));

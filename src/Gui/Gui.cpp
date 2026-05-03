@@ -5,6 +5,11 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 
+// ui includes
+extern "C" {
+#include "ui/screens.h"
+}
+
 /*
  *	constexpr
  */
@@ -28,9 +33,9 @@ static void staticFlushToDisplay(lv_display_t* p_display, const lv_area_t* p_are
 		return;
 	}
 
-	Gui* instance_ = static_cast<Gui*>(p_display->user_data);
+	Gui* instance = static_cast<Gui*>(p_display->user_data);
 
-	instance_->flushToDisplay(p_display, p_area, p_pxMap);
+	instance->flushToDisplay(p_display, p_area, p_pxMap);
 }
 
 static void lvglUpdateTaskFunc(void* p_params)
@@ -45,10 +50,10 @@ static void lvglUpdateTaskFunc(void* p_params)
 
 	while (true) {
 		// Try to get the semaphore
-		if (xSemaphoreTake(*mutex, portMAX_DELAY) == pdTRUE) {
+		if (xSemaphoreTakeRecursive(*mutex, portMAX_DELAY) == pdTRUE) {
 			lv_timer_handler();
 
-			xSemaphoreGive(*mutex);
+			xSemaphoreGiveRecursive(*mutex);
 
 			vTaskDelay(pdMS_TO_TICKS(10));
 		}
@@ -65,6 +70,7 @@ Gui::Gui(ST77916* physicalDisplay)
 	lv_init();
 
 	display_ = lv_display_create(RESOLUTION, RESOLUTION);
+	lv_display_set_rotation(display_, LV_DISPLAY_ROTATION_180);
 	lv_display_set_user_data(display_, this);
 	physicalDisplay_->setLvglDisplay(display_);
 
@@ -86,45 +92,60 @@ Gui::Gui(ST77916* physicalDisplay)
 	// Make the display bg black for now
 	lv_obj_set_style_bg_color(lv_display_get_screen_active(display_), lv_color_hex(0x000000), LV_PART_MAIN);
 
-	guiMutex_ = xSemaphoreCreateMutex();
+	guiMutex_ = xSemaphoreCreateRecursiveMutex();
 
 	lv_display_set_flush_cb(display_, staticFlushToDisplay);
 
 	lv_tick_set_cb(xTaskGetTickCount);
 
-	if (xTaskCreate(lvglUpdateTaskFunc, "lvglUpdateTaskFunc", 10000, nullptr, 0, &lvglUpdateTask_) != pdPASS) {
+	if (xTaskCreate(lvglUpdateTaskFunc, "lvglUpdateTaskFunc", 10000, this, 0, &lvglUpdateTask_) != pdPASS) {
 		ESP_LOGE(TAG, "Failed to create LVGL update task");
-
 		return;
 	}
 }
 
-SemaphoreHandle_t* Gui::getGuiMutex()
-{
-	return &guiMutex_;
-}
+SemaphoreHandle_t* Gui::getGuiMutex() { return &guiMutex_; }
 
-void Gui::setScreen(const Screen& screen)
+void Gui::setScreen(const Screen& screen) const
 {
+	if (xSemaphoreTakeRecursive(guiMutex_, portMAX_DELAY) == pdTRUE) {
+		switch (screen) {
+			case TEMPERATURE:
+				create_screen_temperature();
+				lv_scr_load(objects.temperature);
+				break;
+			case SPEED:
+				create_screen_speed();
+				lv_scr_load(objects.speed);
+				break;
+			case RPM:
+				create_screen_rpm();
+				lv_scr_load(objects.rpm);
+				break;
+		}
 
+		xSemaphoreGiveRecursive(guiMutex_);
+	}
 }
 
 /*
  *	Private Callback functions
  */
-void Gui::flushToDisplay(lv_display_t* p_display, const lv_area_t* p_area, const uint8_t* p_pxMap) const
+void Gui::flushToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap) const
 {
 	if (physicalDisplay_ == nullptr) {
 		return;
 	}
 
-	if (xSemaphoreTake(guiMutex_, portMAX_DELAY) == pdTRUE) {
+	if (xSemaphoreTakeRecursive(guiMutex_, portMAX_DELAY) == pdTRUE) {
+		uint32_t px_cnt = (p_area->x2 - p_area->x1 + 1) * (p_area->y2 - p_area->y1 + 1);
+		lv_draw_sw_rgb565_swap(p_pxMap, px_cnt);
+
 		physicalDisplay_->drawBitmap(p_area, p_pxMap);
 
-		xSemaphoreGive(guiMutex_);
+		xSemaphoreGiveRecursive(guiMutex_);
 	}
 
 	// lv_display_flush_ready is called by the ST77916 driver as the physical display
 	// notifies when the buffer can be reused!
 }
-

@@ -110,6 +110,11 @@ ST77916::ST77916()
 		return;
 	}
 
+	if (esp_lcd_panel_mirror(panelHandle_, true, true) != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to rotate LCD panel");
+		return;
+	}
+
 	/* BL Logic */
 	ledcTimer_ = {.speed_mode = BL_PWM_MODE,
 				  .duty_resolution = BL_PWM_RES,

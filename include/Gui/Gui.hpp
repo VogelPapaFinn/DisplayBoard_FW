@@ -14,7 +14,7 @@ public:
 	 */
 	typedef enum
 	{
-		TEMPERATURES,
+		TEMPERATURE,
 		SPEED,
 		RPM
 	} Screen;
@@ -26,12 +26,12 @@ public:
 
 	SemaphoreHandle_t* getGuiMutex();
 
-	void setScreen(const Screen& screen);
+	void setScreen(const Screen& screen) const;
 
 	/*
 	 *	Private Callback functions
 	 */
-	IRAM_ATTR void flushToDisplay(lv_display_t* p_display, const lv_area_t* p_area, const uint8_t* p_pxMap) const;
+	IRAM_ATTR void flushToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap) const;
 
 private:
 	ST77916* physicalDisplay_ = nullptr;
