@@ -19,6 +19,8 @@ public:
 
 	static void setBacklightLevel(uint8_t percent);
 
+	void drawBitmap(const lv_area_t* p_area, const uint8_t* p_pxMap) const;
+
 	/*
 	 *	Public Callback functions
 	 */

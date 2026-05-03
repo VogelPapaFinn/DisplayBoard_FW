@@ -7,6 +7,9 @@ set(FILES
         # Drivers
         "Driver/ST77916.cpp"
 
+        # Gui
+        "Gui/Gui.cpp"
+
         # *** RESOURCES *** #
         # Fonts
         "../res/fonts/c/E1234_80.c"

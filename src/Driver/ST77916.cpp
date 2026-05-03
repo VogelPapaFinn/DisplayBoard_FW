@@ -1,4 +1,4 @@
-#include "Driver/ST77916.h"
+#include "Driver/ST77916.hpp"
 
 // Project includes
 #include "Driver/ST77916_InitSequence.h"
@@ -111,28 +111,24 @@ ST77916::ST77916()
 	}
 
 	/* BL Logic */
-	ledcTimer_ = {
-		.speed_mode       = BL_PWM_MODE,
-		.duty_resolution  = BL_PWM_RES,
-		.timer_num        = BL_PWM_TIMER,
-		.freq_hz          = BL_PWM_FQ_HZ,
-		.clk_cfg          = LEDC_AUTO_CLK
-	};
+	ledcTimer_ = {.speed_mode = BL_PWM_MODE,
+				  .duty_resolution = BL_PWM_RES,
+				  .timer_num = BL_PWM_TIMER,
+				  .freq_hz = BL_PWM_FQ_HZ,
+				  .clk_cfg = LEDC_AUTO_CLK};
 	if (ledc_timer_config(&ledcTimer_) != ESP_OK) {
 		ESP_LOGE(TAG, "Failed to initialize BL timer");
 		return;
 	}
 
 	// 2. Kanal konfigurieren und mit GPIO und Timer verknüpfen
-	ledcChannel_ = {
-		.gpio_num       = GPIO_BL,
-		.speed_mode     = BL_PWM_MODE,
-		.channel        = BL_PWM_CHANNEL,
-		.intr_type      = LEDC_INTR_DISABLE,
-		.timer_sel      = BL_PWM_TIMER,
-		.duty           = 0,
-		.hpoint         = 0
-	};
+	ledcChannel_ = {.gpio_num = GPIO_BL,
+					.speed_mode = BL_PWM_MODE,
+					.channel = BL_PWM_CHANNEL,
+					.intr_type = LEDC_INTR_DISABLE,
+					.timer_sel = BL_PWM_TIMER,
+					.duty = 0,
+					.hpoint = 0};
 	if (ledc_channel_config(&ledcChannel_) != ESP_OK) {
 		ESP_LOGE(TAG, "Failed to initialize the BL timer channel");
 		return;
@@ -157,6 +153,14 @@ void ST77916::setBacklightLevel(uint8_t percent)
 	ledc_update_duty(BL_PWM_MODE, BL_PWM_CHANNEL);
 }
 
+void ST77916::drawBitmap(const lv_area_t* p_area, const uint8_t* p_pxMap) const
+{
+	esp_lcd_panel_draw_bitmap(panelHandle_, p_area->x1, p_area->y1, p_area->x2 + 1, p_area->y2 + 1, p_pxMap);
+}
+
+/*
+ *	Public Callback functions
+ */
 void ST77916::frameDrawnIsr() const
 {
 	if (lvDisplay_ == nullptr) {
