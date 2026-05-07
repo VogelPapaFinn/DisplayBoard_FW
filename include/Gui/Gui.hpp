@@ -28,12 +28,23 @@ public:
 
 	void setScreen(const Screen& screen) const;
 
+	void setLeftIndicatorActive(const bool& active) const;
+
+	void setRightIndicatorActive(const bool& active) const;
+
+	void setSpeed(const uint8_t& speed) const;
+
+	void setRpm(const uint16_t& rpm) const;
+
 	/*
 	 *	Private Callback functions
 	 */
 	IRAM_ATTR void flushToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap) const;
 
 private:
+	/*
+	 *	Private Variables
+	 */
 	ST77916* physicalDisplay_ = nullptr;
 
 	lv_display_t* display_ = nullptr;

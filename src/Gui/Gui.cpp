@@ -1,6 +1,9 @@
 #include "Gui/Gui.hpp"
 
 // espidf includes
+#include <string>
+
+
 #include "display/lv_display_private.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -19,6 +22,20 @@ constexpr uint16_t RESOLUTION = 360;
 constexpr uint8_t BIT_DEPTH_B = 2;
 
 constexpr uint64_t FRAME_BUFFER_SIZE_B = RESOLUTION * RESOLUTION * BIT_DEPTH_B;
+
+/*
+ *	Private Mutex Class
+ */
+class GuiLock
+{
+public:
+	GuiLock(SemaphoreHandle_t mutex) : mutex_(mutex) { xSemaphoreTakeRecursive(mutex_, portMAX_DELAY); }
+
+	~GuiLock() { xSemaphoreGiveRecursive(mutex_); }
+
+private:
+	SemaphoreHandle_t mutex_;
+};
 
 /*
  *	Private ISR's
@@ -49,14 +66,11 @@ static void lvglUpdateTaskFunc(void* p_params)
 	const auto mutex = instance_->getGuiMutex();
 
 	while (true) {
-		// Try to get the semaphore
-		if (xSemaphoreTakeRecursive(*mutex, portMAX_DELAY) == pdTRUE) {
-			lv_timer_handler();
+		GuiLock lock(*mutex);
 
-			xSemaphoreGiveRecursive(*mutex);
+		lv_timer_handler();
 
-			vTaskDelay(pdMS_TO_TICKS(10));
-		}
+		vTaskDelay(pdMS_TO_TICKS(10));
 	}
 }
 
@@ -108,24 +122,76 @@ SemaphoreHandle_t* Gui::getGuiMutex() { return &guiMutex_; }
 
 void Gui::setScreen(const Screen& screen) const
 {
-	if (xSemaphoreTakeRecursive(guiMutex_, portMAX_DELAY) == pdTRUE) {
-		switch (screen) {
-			case TEMPERATURE:
-				create_screen_temperature();
-				lv_scr_load(objects.temperature);
-				break;
-			case SPEED:
-				create_screen_speed();
-				lv_scr_load(objects.speed);
-				break;
-			case RPM:
-				create_screen_rpm();
-				lv_scr_load(objects.rpm);
-				break;
-		}
+	GuiLock lock(guiMutex_);
 
-		xSemaphoreGiveRecursive(guiMutex_);
+	switch (screen) {
+		case TEMPERATURE:
+			create_screen_temperature();
+			lv_scr_load(objects.temperature);
+			break;
+		case SPEED:
+			create_screen_speed();
+			lv_scr_load(objects.speed);
+			break;
+		case RPM:
+			create_screen_rpm();
+			lv_scr_load(objects.rpm);
+			break;
 	}
+}
+
+void Gui::setLeftIndicatorActive(const bool& active) const
+{
+	if (objects.left_indicator == nullptr) {
+		return;
+	}
+
+	GuiLock lock(guiMutex_);
+
+	if (active) {
+		lv_obj_set_style_opa(objects.left_indicator, LV_OPA_100, LV_PART_MAIN);
+	}
+	else {
+		lv_obj_set_style_opa(objects.left_indicator, LV_OPA_20, LV_PART_MAIN);
+	}
+}
+
+void Gui::setRightIndicatorActive(const bool& active) const
+{
+	if (objects.right_indicator == nullptr) {
+		return;
+	}
+
+	GuiLock lock(guiMutex_);
+
+	if (active) {
+		lv_obj_set_style_opa(objects.right_indicator, LV_OPA_100, LV_PART_MAIN);
+	}
+	else {
+		lv_obj_set_style_opa(objects.right_indicator, LV_OPA_20, LV_PART_MAIN);
+	}
+}
+
+void Gui::setSpeed(const uint8_t& speed) const
+{
+	if (objects.speed_label == nullptr) {
+		return;
+	}
+
+	GuiLock lock(guiMutex_);
+
+	lv_label_set_text(objects.speed_label, std::to_string(speed).c_str());
+}
+
+void Gui::setRpm(const uint16_t& rpm) const
+{
+	if (objects.rpm_label == nullptr) {
+		return;
+	}
+
+	GuiLock lock(guiMutex_);
+
+	lv_label_set_text(objects.rpm_label, std::to_string(rpm).c_str());
 }
 
 /*
@@ -137,14 +203,12 @@ void Gui::flushToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8
 		return;
 	}
 
-	if (xSemaphoreTakeRecursive(guiMutex_, portMAX_DELAY) == pdTRUE) {
-		uint32_t px_cnt = (p_area->x2 - p_area->x1 + 1) * (p_area->y2 - p_area->y1 + 1);
-		lv_draw_sw_rgb565_swap(p_pxMap, px_cnt);
+	GuiLock lock(guiMutex_);
 
-		physicalDisplay_->drawBitmap(p_area, p_pxMap);
+	uint32_t px_cnt = (p_area->x2 - p_area->x1 + 1) * (p_area->y2 - p_area->y1 + 1);
+	lv_draw_sw_rgb565_swap(p_pxMap, px_cnt);
 
-		xSemaphoreGiveRecursive(guiMutex_);
-	}
+	physicalDisplay_->drawBitmap(p_area, p_pxMap);
 
 	// lv_display_flush_ready is called by the ST77916 driver as the physical display
 	// notifies when the buffer can be reused!

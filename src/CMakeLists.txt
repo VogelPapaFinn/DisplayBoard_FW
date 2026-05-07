@@ -6,6 +6,9 @@ set(FILES
 
         # Drivers
         "Driver/ST77916.cpp"
+
+        # Gui
+        "Gui/Gui.cpp"
 )
 
 file(GLOB UI

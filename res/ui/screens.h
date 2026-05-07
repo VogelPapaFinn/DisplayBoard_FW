@@ -21,18 +21,20 @@ typedef struct _objects_t {
     lv_obj_t *rpm;
     lv_obj_t *speed;
     lv_obj_t *temperature;
+    lv_obj_t *rpm_label;
     lv_obj_t *obj0;
+    lv_obj_t *left_indicator;
     lv_obj_t *obj1;
     lv_obj_t *obj2;
+    lv_obj_t *speed_label;
     lv_obj_t *obj3;
+    lv_obj_t *right_indicator;
     lv_obj_t *obj4;
     lv_obj_t *obj5;
+    lv_obj_t *temperature_label;
     lv_obj_t *obj6;
     lv_obj_t *obj7;
     lv_obj_t *obj8;
-    lv_obj_t *obj9;
-    lv_obj_t *obj10;
-    lv_obj_t *obj11;
     lv_obj_t *arc0;
     lv_obj_t *arc1;
     lv_obj_t *arc2;
@@ -43,8 +45,8 @@ typedef struct _objects_t {
     lv_obj_t *arc7;
     lv_obj_t *arc8;
     lv_obj_t *arc9;
-    lv_obj_t *obj12;
-    lv_obj_t *obj13;
+    lv_obj_t *percent_label;
+    lv_obj_t *liter_label;
 } objects_t;
 
 extern objects_t objects;

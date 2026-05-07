@@ -31,17 +31,20 @@ void create_screen_rpm() {
     {
         lv_obj_t *parent_obj = obj;
         {
+            // RpmLabel
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj0 = obj;
-            lv_obj_set_pos(obj, 68, 138);
+            objects.rpm_label = obj;
+            lv_obj_set_pos(obj, 0, -11);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_font(obj, &ui_font_e1234, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "0000");
         }
         {
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj1 = obj;
+            objects.obj0 = obj;
             lv_obj_set_pos(obj, 159, 94);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -49,7 +52,9 @@ void create_screen_rpm() {
             lv_label_set_text_static(obj, "RPM");
         }
         {
+            // LeftIndicator
             lv_obj_t *obj = lv_image_create(parent_obj);
+            objects.left_indicator = obj;
             lv_obj_set_pos(obj, 161, 246);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_image_set_src(obj, &img_left_indicator);
@@ -65,7 +70,7 @@ void create_screen_rpm() {
         }
         {
             lv_obj_t *obj = lv_line_create(parent_obj);
-            objects.obj2 = obj;
+            objects.obj1 = obj;
             lv_obj_set_pos(obj, 0, 169);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             static lv_point_precise_t line_points[] = {
@@ -78,7 +83,7 @@ void create_screen_rpm() {
         }
         {
             lv_obj_t *obj = lv_line_create(parent_obj);
-            objects.obj3 = obj;
+            objects.obj2 = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             static lv_point_precise_t line_points[] = {
@@ -106,17 +111,19 @@ void create_screen_speed() {
     {
         lv_obj_t *parent_obj = obj;
         {
+            // SpeedLabel
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj4 = obj;
-            lv_obj_set_pos(obj, 68, 138);
+            objects.speed_label = obj;
+            lv_obj_set_pos(obj, 0, -11);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_font(obj, &ui_font_e1234, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "0000");
         }
         {
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj5 = obj;
+            objects.obj3 = obj;
             lv_obj_set_pos(obj, 159, 94);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -124,7 +131,9 @@ void create_screen_speed() {
             lv_label_set_text_static(obj, "kmh");
         }
         {
+            // RightIndicator
             lv_obj_t *obj = lv_image_create(parent_obj);
+            objects.right_indicator = obj;
             lv_obj_set_pos(obj, 161, 246);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_image_set_src(obj, &img_left_indicator);
@@ -141,7 +150,7 @@ void create_screen_speed() {
         }
         {
             lv_obj_t *obj = lv_line_create(parent_obj);
-            objects.obj6 = obj;
+            objects.obj4 = obj;
             lv_obj_set_pos(obj, 0, 169);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             static lv_point_precise_t line_points[] = {
@@ -154,7 +163,7 @@ void create_screen_speed() {
         }
         {
             lv_obj_t *obj = lv_line_create(parent_obj);
-            objects.obj7 = obj;
+            objects.obj5 = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             static lv_point_precise_t line_points[] = {
@@ -182,8 +191,9 @@ void create_screen_temperature() {
     {
         lv_obj_t *parent_obj = obj;
         {
+            // TemperatureLabel
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj8 = obj;
+            objects.temperature_label = obj;
             lv_obj_set_pos(obj, 124, 138);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -192,7 +202,7 @@ void create_screen_temperature() {
         }
         {
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj9 = obj;
+            objects.obj6 = obj;
             lv_obj_set_pos(obj, 267, 181);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -207,7 +217,7 @@ void create_screen_temperature() {
         }
         {
             lv_obj_t *obj = lv_line_create(parent_obj);
-            objects.obj10 = obj;
+            objects.obj7 = obj;
             lv_obj_set_pos(obj, 0, 169);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             static lv_point_precise_t line_points[] = {
@@ -220,7 +230,7 @@ void create_screen_temperature() {
         }
         {
             lv_obj_t *obj = lv_line_create(parent_obj);
-            objects.obj11 = obj;
+            objects.obj8 = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             static lv_point_precise_t line_points[] = {
@@ -412,8 +422,9 @@ void create_screen_temperature() {
             lv_obj_set_style_arc_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
         }
         {
+            // PercentLabel
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj12 = obj;
+            objects.percent_label = obj;
             lv_obj_set_pos(obj, 145, 42);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -421,9 +432,10 @@ void create_screen_temperature() {
             lv_label_set_text_static(obj, "100%");
         }
         {
+            // LiterLabel
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj13 = obj;
-            lv_obj_set_pos(obj, 124, 284);
+            objects.liter_label = obj;
+            lv_obj_set_pos(obj, 124, 274);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_font(obj, &ui_font_vcr_osd_mono, LV_PART_MAIN | LV_STATE_DEFAULT);
