@@ -1,5 +1,8 @@
 // Project includes
 #include "Can.hpp"
+#include "Core.hpp"
+#include "Event.hpp"
+#include "State/Registration.hpp"
 
 // espidf includes
 #include "freertos/FreeRTOS.h"
@@ -10,44 +13,16 @@
  */
 constexpr auto TAG = "main";
 
-constexpr gpio_num_t GPIO_CAN_RX = GPIO_NUM_39;
-constexpr gpio_num_t GPIO_CAN_TX = GPIO_NUM_40;
-
 /*
  *	Private Static Variables
  */
-static Can can(GPIO_CAN_RX, GPIO_CAN_TX);
-static uint8_t canId = 0;
+static Core* core = nullptr;
+
 static QueueHandle_t canQueueHandle = xQueueCreate(10, sizeof(Can::Frame));
 
-bool waitingForWakeUp = false;
+static QueueHandle_t mainEventQueueHandle = xQueueCreate(20, sizeof(Event));
 
-/*
- *	Private Functions
- */
-void broadcastId()
-{
-	Can::Frame txFrame;
-	txFrame.sender = canId;
-	txFrame.target = 0;
-	txFrame.group = CanFrame::GROUP::CONFIGURATION;
-	txFrame.function = CanFrame::CONFIGURATION::BROADCAST_STARTUP;
-	txFrame.answer = 0;
-
-	can.queueFrame(txFrame);
-}
-
-void confirmNewId()
-{
-	Can::Frame txFrame;
-	txFrame.sender = canId;
-	txFrame.target = 1;
-	txFrame.group = CanFrame::GROUP::CONFIGURATION;
-	txFrame.function = CanFrame::CONFIGURATION::SET_ID;
-	txFrame.answer = 1;
-
-	can.queueFrame(txFrame);
-}
+static std::shared_ptr<State> currentState;
 
 /*
  *	Can rx callback function
@@ -60,51 +35,29 @@ static void canRxTask(void* param)
 			continue;
 		}
 
-		if (rxFrame.group != CanFrame::GROUP::CONFIGURATION) {
+		currentState->handleCanFrame(rxFrame);
+	}
+}
+
+static void eventQueueTask(void* param)
+{
+	Event event;
+	while (true) {
+		if (xQueueReceive(mainEventQueueHandle, &event, portMAX_DELAY) != pdPASS) {
 			continue;
 		}
 
-		if (rxFrame.sender != 1) {
-			continue;
-		}
-
-		if (rxFrame.target != canId) {
-			continue;
-		}
-
-		// Act depending on the function type
-		switch (rxFrame.function) {
-			case CanFrame::SET_ID:
+		switch (event.type) {
+			case Event::UNKNOWN:
+				break;
+			case Event::SET_SCREEN:
 				{
-					esp_rom_printf("SET_ID\n");
-
-					if (rxFrame.target != canId) {
-						continue;
-					}
-
-					if (rxFrame.dataLengthCode <= 0) {
-						continue;
-					}
-
-					canId = rxFrame.data[0];
-
-					confirmNewId();
-					waitingForWakeUp = true;
-					continue;
+					core->getGui()->setScreen(event.data);
 				}
 				break;
-
-			case CanFrame::CONFIRM_ID:
+			case Event::WAKE_UP:
 				{
-					esp_rom_printf("CONFIRM_ID\n");
-
-					waitingForWakeUp = true;
-				}
-				break;
-
-			default:
-				{
-					esp_rom_printf("DEFAULT\n");
+					core->getDisplayDriver()->setBacklightLevel(60);
 				}
 				break;
 		}
@@ -116,9 +69,13 @@ static void canRxTask(void* param)
  */
 extern "C" void app_main(void)
 {
-	can.initialize();
-	can.enable();
-	can.registerRxCbQueue(&canQueueHandle);
+	// MUSS BESTEHEN BLEIBEN
+	// Filesystem* fs = Filesystem::get(false, true);
+	vTaskDelay(pdMS_TO_TICKS(500));
+
+	core = Core::get();
+	core->setMainEventQueue(mainEventQueueHandle);
+	core->getCan()->registerRxCbQueue(&canQueueHandle);
 
 	TaskHandle_t canRxTaskHandle;
 	if (xTaskCreate(canRxTask, "MainCanRxTask", 2048 * 4, NULL, 2, &canRxTaskHandle) != pdPASS) {
@@ -127,8 +84,15 @@ extern "C" void app_main(void)
 		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
 	}
 
-	// Broadcast
-	broadcastId();
+	TaskHandle_t eventQueueHandle;
+	if (xTaskCreate(eventQueueTask, "MainEventQueueTask", 8048 * 4, NULL, 2, &eventQueueHandle) != pdPASS) {
+		ESP_LOGE(TAG, "Failed to create Event Queue Task. Restarting...");
+		esp_restart();
+		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
+	}
+
+	currentState = std::make_shared<Registration>();
+	currentState->enter();
 
 	while (true) {
 		vTaskDelay(pdMS_TO_TICKS(1000));

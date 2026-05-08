@@ -2,6 +2,7 @@
 
 // Project includes
 #include "Driver/ST77916.hpp"
+#include "Event.hpp"
 
 // espidf includes
 #include "lvgl.h"
@@ -12,12 +13,12 @@ public:
 	/*
 	 *	Public Enumeration
 	 */
-	typedef enum
+	enum
 	{
 		TEMPERATURE,
 		SPEED,
 		RPM
-	} Screen;
+	} SCREEN;
 
 	/*
 	 *	Public Functions
@@ -26,7 +27,11 @@ public:
 
 	SemaphoreHandle_t* getGuiMutex();
 
-	void setScreen(const Screen& screen) const;
+	void setScreen(const uint8_t screen) const;
+
+	void queueEventFromISR(const Event& event) const;
+
+	QueueHandle_t getEventQueue() const;
 
 	void setLeftIndicatorActive(const bool& active) const;
 
@@ -55,6 +60,10 @@ private:
 	/*
 	 *	Thread Stuff
 	 */
+	TaskHandle_t eventQueueHandle_;
+
+	QueueHandle_t eventQueue_;
+
 	SemaphoreHandle_t guiMutex_;
 
 	TaskHandle_t lvglUpdateTask_;

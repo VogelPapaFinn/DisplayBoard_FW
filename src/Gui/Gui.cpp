@@ -1,9 +1,10 @@
 #include "Gui/Gui.hpp"
 
+//  Project includes
+#include "Core.hpp"
+
 // espidf includes
 #include <string>
-
-
 #include "display/lv_display_private.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -66,11 +67,47 @@ static void lvglUpdateTaskFunc(void* p_params)
 	const auto mutex = instance_->getGuiMutex();
 
 	while (true) {
-		GuiLock lock(*mutex);
+		{
+			GuiLock lock(*mutex);
 
-		lv_timer_handler();
+			lv_timer_handler();
+		}
 
 		vTaskDelay(pdMS_TO_TICKS(10));
+	}
+}
+
+static void eventQueueTask(void* param)
+{
+	if (param == nullptr) {
+		esp_rom_printf("Null\n");
+		vTaskDelete(nullptr);
+	}
+
+	Gui* gui = static_cast<Gui*>(param);
+
+	Event event;
+	while (true) {
+		if (xQueueReceive(gui->getEventQueue(), &event, portMAX_DELAY) != pdPASS) {
+			continue;
+		}
+
+		switch (event.type) {
+			case Event::UNKNOWN:
+				break;
+			case Event::SET_SCREEN:
+				{
+					gui->setScreen(event.data);
+				}
+				break;
+			case Event::WAKE_UP:
+				{
+					Core::get()->getDisplayDriver()->setBacklightLevel(60);
+				}
+				break;
+			default:
+				esp_rom_printf("default\n");
+		}
 	}
 }
 
@@ -112,15 +149,23 @@ Gui::Gui(ST77916* physicalDisplay)
 
 	lv_tick_set_cb(xTaskGetTickCount);
 
-	if (xTaskCreate(lvglUpdateTaskFunc, "lvglUpdateTaskFunc", 10000, this, 0, &lvglUpdateTask_) != pdPASS) {
+	if (xTaskCreate(lvglUpdateTaskFunc, "lvglUpdateTaskFunc", 10000, this, 3, &lvglUpdateTask_) != pdPASS) {
 		ESP_LOGE(TAG, "Failed to create LVGL update task");
 		return;
+	}
+
+	eventQueue_ = xQueueCreate(20, sizeof(Event));
+
+	if (xTaskCreate(eventQueueTask, "GuiEventQueueTask", 8192, this, 2, &eventQueueHandle_) != pdPASS) {
+		ESP_LOGE(TAG, "Failed to create Event Queue Task. Restarting...");
+		esp_restart();
+		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
 	}
 }
 
 SemaphoreHandle_t* Gui::getGuiMutex() { return &guiMutex_; }
 
-void Gui::setScreen(const Screen& screen) const
+void Gui::setScreen(const uint8_t screen) const
 {
 	GuiLock lock(guiMutex_);
 
@@ -137,8 +182,23 @@ void Gui::setScreen(const Screen& screen) const
 			create_screen_rpm();
 			lv_scr_load(objects.rpm);
 			break;
+		default:
+			break;
 	}
 }
+
+void Gui::queueEventFromISR(const Event& event) const
+{
+	BaseType_t woken = pdFALSE;
+	if (xQueueSendFromISR(eventQueue_, &event, &woken) == pdFALSE) {
+		esp_rom_printf("FALSE\n");
+	}
+
+	// Execute Context Switch if needed (woken == pdTRUE)
+	portYIELD_FROM_ISR(woken);
+}
+
+QueueHandle_t Gui::getEventQueue() const { return eventQueue_; }
 
 void Gui::setLeftIndicatorActive(const bool& active) const
 {
