@@ -8,7 +8,18 @@
  */
 Registration::Registration() : State(State::REGISTRATION) {}
 
-void Registration::enter() { registerAtMaster(); }
+void Registration::enter()
+{
+	jsonConfig_ = core_->getConfig();
+	if (!jsonConfig_->isNull()) {
+		const auto& canID = (*jsonConfig_)["canID"];
+		if (canID) {
+			core_->setCanId(canID.as<unsigned int>());
+		}
+	}
+
+	registerAtMaster();
+}
 
 void Registration::handleCanFrame(const Can::Frame& frame)
 {
@@ -33,6 +44,9 @@ void Registration::handleCanFrame(const Can::Frame& frame)
 				if (frame.dataLengthCode <= 0) {
 					return;
 				}
+
+				(*jsonConfig_)["canID"] = frame.data[0];
+				core_->saveConfig();
 
 				core_->setCanId(frame.data[0]);
 

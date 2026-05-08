@@ -20,8 +20,6 @@ static Core* core = nullptr;
 
 static QueueHandle_t canQueueHandle = xQueueCreate(10, sizeof(Can::Frame));
 
-static QueueHandle_t mainEventQueueHandle = xQueueCreate(20, sizeof(Event));
-
 static std::shared_ptr<State> currentState;
 
 /*
@@ -39,54 +37,21 @@ static void canRxTask(void* param)
 	}
 }
 
-static void eventQueueTask(void* param)
-{
-	Event event;
-	while (true) {
-		if (xQueueReceive(mainEventQueueHandle, &event, portMAX_DELAY) != pdPASS) {
-			continue;
-		}
-
-		switch (event.type) {
-			case Event::UNKNOWN:
-				break;
-			case Event::SET_SCREEN:
-				{
-					core->getGui()->setScreen(event.data);
-				}
-				break;
-			case Event::WAKE_UP:
-				{
-					core->getDisplayDriver()->setBacklightLevel(60);
-				}
-				break;
-		}
-	}
-}
-
 /*
  *	main function
  */
 extern "C" void app_main(void)
 {
 	// MUSS BESTEHEN BLEIBEN
-	// Filesystem* fs = Filesystem::get(false, true);
+	Filesystem* fs = Filesystem::get(false, true, false);
 	vTaskDelay(pdMS_TO_TICKS(500));
 
 	core = Core::get();
-	core->setMainEventQueue(mainEventQueueHandle);
 	core->getCan()->registerRxCbQueue(&canQueueHandle);
 
 	TaskHandle_t canRxTaskHandle;
 	if (xTaskCreate(canRxTask, "MainCanRxTask", 2048 * 4, NULL, 2, &canRxTaskHandle) != pdPASS) {
 		ESP_LOGE(TAG, "Failed to create CAN RX Task. Restarting...");
-		esp_restart();
-		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
-	}
-
-	TaskHandle_t eventQueueHandle;
-	if (xTaskCreate(eventQueueTask, "MainEventQueueTask", 8048 * 4, NULL, 2, &eventQueueHandle) != pdPASS) {
-		ESP_LOGE(TAG, "Failed to create Event Queue Task. Restarting...");
 		esp_restart();
 		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
 	}

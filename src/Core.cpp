@@ -5,6 +5,8 @@
  */
 constexpr auto TAG = "Core";
 
+constexpr auto CONFIG_NAME = "config.json";
+
 constexpr gpio_num_t GPIO_CAN_RX = GPIO_NUM_39;
 constexpr gpio_num_t GPIO_CAN_TX = GPIO_NUM_40;
 
@@ -25,15 +27,6 @@ Core* Core::get()
 	return self_;
 }
 
-void Core::setMainEventQueue(QueueHandle_t queue)
-{
-	mainEventQueue_ = queue;
-}
-
-QueueHandle_t Core::getMainEventQueue() const {
-	return mainEventQueue_;
-}
-
 ST77916* Core::getDisplayDriver() const
 {
 	return displayDriver_;
@@ -41,6 +34,14 @@ ST77916* Core::getDisplayDriver() const
 
 Gui* Core::getGui() const {
 	return gui_;
+}
+
+ArduinoJson::JsonDocument* Core::getConfig() const {
+	return jsonConfig_;
+}
+
+void Core::saveConfig() const {
+	config_->save();
 }
 
 Can* Core::getCan() const {
@@ -70,11 +71,18 @@ Core::Core()
 	can_->initialize();
 	can_->enable();
 
+	auto fs = Filesystem::get();
+	if (!fs->doesFileExist(CONFIG_NAME, Filesystem::CONFIG_PARTITION)) {
+		fs->createFile(CONFIG_NAME, Filesystem::CONFIG_PARTITION);
+	}
+
+	config_ = new Config(CONFIG_NAME);
+	jsonConfig_ = config_->getJson();
+
 	/*
 	 *	Frontend
 	 */
 	displayDriver_ = new ST77916();
 
 	gui_ = new Gui(displayDriver_);
-
 }

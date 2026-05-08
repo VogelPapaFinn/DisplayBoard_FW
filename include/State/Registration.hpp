@@ -21,4 +21,9 @@ private:
 	void registerAtMaster() const;
 
 	void confirmScreen() const;
+
+	/*
+	 *	Private Variables
+	 */
+	ArduinoJson::JsonDocument* jsonConfig_ = nullptr;
 };

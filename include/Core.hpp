@@ -3,6 +3,10 @@
 // Project includes
 #include "Can.hpp"
 #include "Gui/Gui.hpp"
+#include "Config.hpp"
+
+// espidf includes
+#include "ArduinoJson.hpp"
 
 /*
  *	Public constexpr
@@ -15,15 +19,18 @@ constexpr uint8_t MASTER_CAN_ID = 1;
 class Core
 {
 public:
+	/*
+	 *	Public Functions
+	 */
 	static Core* get();
-
-	void setMainEventQueue(QueueHandle_t queue);
-
-	QueueHandle_t getMainEventQueue() const;
 
 	ST77916* getDisplayDriver() const;
 
 	Gui* getGui() const;
+
+	ArduinoJson::JsonDocument* getConfig() const;
+
+	void saveConfig() const;
 
 	/*
 	 *	CAN related functions
@@ -56,5 +63,7 @@ private:
 	 */
 	uint8_t canId_ = 0;
 
-	QueueHandle_t mainEventQueue_ = nullptr;
+	Config* config_ = nullptr;
+
+	ArduinoJson::JsonDocument* jsonConfig_ = nullptr;
 };
