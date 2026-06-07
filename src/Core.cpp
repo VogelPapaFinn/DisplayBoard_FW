@@ -27,6 +27,15 @@ Core* Core::get()
 	return self_;
 }
 
+void Core::setMainEventQueue(QueueHandle_t queue)
+{
+	mainEventQueue_ = queue;
+}
+
+QueueHandle_t Core::getMainEventQueue() const {
+	return mainEventQueue_;
+}
+
 ST77916* Core::getDisplayDriver() const
 {
 	return displayDriver_;
@@ -71,7 +80,7 @@ Core::Core()
 	can_->initialize();
 	can_->enable();
 
-	auto fs = Filesystem::get();
+	auto fs = Filesystem::get(false, true, false);
 	if (!fs->doesFileExist(CONFIG_NAME, Filesystem::CONFIG_PARTITION)) {
 		fs->createFile(CONFIG_NAME, Filesystem::CONFIG_PARTITION);
 	}

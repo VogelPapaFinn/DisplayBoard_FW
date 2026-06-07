@@ -9,11 +9,6 @@
 #include "ArduinoJson.hpp"
 
 /*
- *	Public constexpr
- */
-constexpr uint8_t MASTER_CAN_ID = 1;
-
-/*
  *	Class
  */
 class Core
@@ -23,6 +18,10 @@ public:
 	 *	Public Functions
 	 */
 	static Core* get();
+
+	void setMainEventQueue(QueueHandle_t queue);
+
+	QueueHandle_t getMainEventQueue() const;
 
 	ST77916* getDisplayDriver() const;
 
@@ -61,6 +60,8 @@ private:
 	/*
 	 *	Private Variables
 	 */
+	QueueHandle_t mainEventQueue_ = nullptr;
+
 	uint8_t canId_ = 0;
 
 	Config* config_ = nullptr;

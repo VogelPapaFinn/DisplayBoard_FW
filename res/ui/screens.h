@@ -47,6 +47,7 @@ typedef struct _objects_t {
     lv_obj_t *arc9;
     lv_obj_t *percent_label;
     lv_obj_t *liter_label;
+    lv_obj_t *oil_can;
 } objects_t;
 
 extern objects_t objects;

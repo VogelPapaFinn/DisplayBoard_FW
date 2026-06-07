@@ -10,6 +10,7 @@ set(FILES
         # States
         "State/State.cpp"
         "State/Registration.cpp"
+        "State/Operation.cpp"
 
         # Everything else
         "Gui/Gui.cpp"

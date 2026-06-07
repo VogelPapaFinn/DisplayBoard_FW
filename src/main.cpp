@@ -2,6 +2,7 @@
 #include "Can.hpp"
 #include "Core.hpp"
 #include "Event.hpp"
+#include "State/Operation.hpp"
 #include "State/Registration.hpp"
 
 // espidf includes
@@ -20,6 +21,8 @@ static Core* core = nullptr;
 
 static QueueHandle_t canQueueHandle = xQueueCreate(10, sizeof(Can::Frame));
 
+static QueueHandle_t mainEventQueueHandle = xQueueCreate(20, sizeof(Event));
+
 static std::shared_ptr<State> currentState;
 
 /*
@@ -37,21 +40,47 @@ static void canRxTask(void* param)
 	}
 }
 
+static void mainEventTask(void* param)
+{
+	Event event;
+	while (true) {
+		if (xQueueReceive(mainEventQueueHandle, &event, portMAX_DELAY) != pdPASS) {
+			continue;
+		}
+
+		// Act depending on the event
+		switch (event.type) {
+			case Event::REGISTRATION_FINISHED:
+			{
+				currentState = std::make_shared<Operation>();
+				currentState->enter();
+			} break;
+			default: ;
+		}
+	}
+}
+
 /*
  *	main function
  */
 extern "C" void app_main(void)
 {
 	// MUSS BESTEHEN BLEIBEN
-	Filesystem* fs = Filesystem::get(false, true, false);
-	vTaskDelay(pdMS_TO_TICKS(500));
+	vTaskDelay(pdMS_TO_TICKS(100));
 
 	core = Core::get();
+	core->setMainEventQueue(mainEventQueueHandle);
 	core->getCan()->registerRxCbQueue(&canQueueHandle);
 
 	TaskHandle_t canRxTaskHandle;
 	if (xTaskCreate(canRxTask, "MainCanRxTask", 2048 * 4, NULL, 2, &canRxTaskHandle) != pdPASS) {
 		ESP_LOGE(TAG, "Failed to create CAN RX Task. Restarting...");
+		esp_restart();
+		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
+	}
+
+	if (xTaskCreate(mainEventTask, "MainEventTask", 2048, NULL, 2, NULL) != pdPASS) {
+		ESP_LOGE(TAG, "Failed to create main event task");
 		esp_restart();
 		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
 	}

@@ -7,15 +7,20 @@ struct Event
 		UNKNOWN,
 		SET_SCREEN,
 		WAKE_UP,
+		REGISTRATION_FINISHED,
+		NEW_SENSOR_DATA
 	} TYPE;
 
-	Event(const TYPE type = UNKNOWN, const int data = 0)
+	Event(const TYPE type = UNKNOWN)
 	{
 		this->type = type;
-		this->data = data;
 	}
 
 	TYPE type = UNKNOWN;
 
-	int data = 0;
+	union
+	{
+		uint8_t canData[8] = {0x00};
+		int intData;
+	};
 };

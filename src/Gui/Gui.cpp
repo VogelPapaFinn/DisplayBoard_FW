@@ -97,12 +97,40 @@ static void eventQueueTask(void* param)
 				break;
 			case Event::SET_SCREEN:
 				{
-					gui->setScreen(event.data);
+					gui->setScreen(event.intData);
 				}
 				break;
 			case Event::WAKE_UP:
 				{
 					Core::get()->getDisplayDriver()->setBacklightLevel(60);
+				}
+				break;
+			case Event::NEW_SENSOR_DATA:
+				{
+					// Fuel Level, Oil Pressure, WaterTemperature
+					// Rpm, Speed, LIndicator, RIndicator
+					switch (gui->getScreen()) {
+						case Gui::TEMPERATURE:
+							{
+								gui->setFuelLevel(event.canData[0]);
+								gui->setOilPressure(event.canData[1]);
+								gui->setWaterTemperature(event.canData[2]);
+							}
+							break;
+						case Gui::SPEED:
+							{
+								gui->setSpeed(event.canData[5]);
+								gui->setRightIndicatorActive(event.canData[7]);
+							}
+							break;
+						case Gui::RPM:
+							{
+								gui->setRpm((event.canData[3] << 8) + event.canData[4]);
+								gui->setLeftIndicatorActive(event.canData[6]);
+							}
+							break;
+						default:;
+					}
 				}
 				break;
 			default:
@@ -121,7 +149,6 @@ Gui::Gui(ST77916* physicalDisplay)
 	lv_init();
 
 	display_ = lv_display_create(RESOLUTION, RESOLUTION);
-	lv_display_set_rotation(display_, LV_DISPLAY_ROTATION_180);
 	lv_display_set_user_data(display_, this);
 	physicalDisplay_->setLvglDisplay(display_);
 
@@ -165,8 +192,10 @@ Gui::Gui(ST77916* physicalDisplay)
 
 SemaphoreHandle_t* Gui::getGuiMutex() { return &guiMutex_; }
 
-void Gui::setScreen(const uint8_t screen) const
+void Gui::setScreen(const uint8_t screen)
 {
+	currentScreen_ = screen;
+
 	GuiLock lock(guiMutex_);
 
 	switch (screen) {
@@ -186,6 +215,7 @@ void Gui::setScreen(const uint8_t screen) const
 			break;
 	}
 }
+uint8_t Gui::getScreen() const { return currentScreen_; }
 
 void Gui::queueEventFromISR(const Event& event) const
 {
@@ -209,10 +239,10 @@ void Gui::setLeftIndicatorActive(const bool& active) const
 	GuiLock lock(guiMutex_);
 
 	if (active) {
-		lv_obj_set_style_opa(objects.left_indicator, LV_OPA_100, LV_PART_MAIN);
+		lv_obj_set_style_image_opa(objects.left_indicator, LV_OPA_100, LV_PART_MAIN);
 	}
 	else {
-		lv_obj_set_style_opa(objects.left_indicator, LV_OPA_20, LV_PART_MAIN);
+		lv_obj_set_style_image_opa(objects.left_indicator, LV_OPA_20, LV_PART_MAIN);
 	}
 }
 
@@ -225,10 +255,10 @@ void Gui::setRightIndicatorActive(const bool& active) const
 	GuiLock lock(guiMutex_);
 
 	if (active) {
-		lv_obj_set_style_opa(objects.right_indicator, LV_OPA_100, LV_PART_MAIN);
+		lv_obj_set_style_image_opa(objects.right_indicator, LV_OPA_100, LV_PART_MAIN);
 	}
 	else {
-		lv_obj_set_style_opa(objects.right_indicator, LV_OPA_20, LV_PART_MAIN);
+		lv_obj_set_style_image_opa(objects.right_indicator, LV_OPA_20, LV_PART_MAIN);
 	}
 }
 
@@ -252,6 +282,53 @@ void Gui::setRpm(const uint16_t& rpm) const
 	GuiLock lock(guiMutex_);
 
 	lv_label_set_text(objects.rpm_label, std::to_string(rpm).c_str());
+}
+
+void Gui::setOilPressure(const bool& active) const
+{
+	if (objects.oil_can == nullptr) {
+		return;
+	}
+
+	GuiLock lock(guiMutex_);
+
+	if (active) {
+		lv_obj_set_style_image_opa(objects.oil_can, LV_OPA_0, LV_PART_MAIN);
+	}
+	else {
+		lv_obj_set_style_image_opa(objects.oil_can, LV_OPA_100, LV_PART_MAIN);
+	}
+}
+
+void Gui::setFuelLevel(const uint8_t& fuelLevelPercent) const
+{
+	if (objects.percent_label == nullptr) {
+		return;
+	}
+
+	GuiLock lock(guiMutex_);
+
+	lv_label_set_text(objects.percent_label, (std::to_string(fuelLevelPercent) + "%").c_str());
+
+	const std::vector<lv_obj_t*> arcs = {objects.arc0, objects.arc1, objects.arc2, objects.arc3, objects.arc4,
+										 objects.arc5, objects.arc6, objects.arc7, objects.arc8, objects.arc9};
+	for (uint8_t i = 0; i < fuelLevelPercent / 10; i++) {
+		lv_obj_set_style_arc_opa(arcs[i], LV_OPA_100, LV_PART_MAIN);
+	}
+	for (uint8_t i = fuelLevelPercent / 10; i < 10; i++) {
+		lv_obj_set_style_arc_opa(arcs[i], LV_OPA_20, LV_PART_MAIN);
+	}
+}
+
+void Gui::setWaterTemperature(const int16_t& temperature) const
+{
+	if (objects.temperature_label == nullptr) {
+		return;
+	}
+
+	GuiLock lock(guiMutex_);
+
+	lv_label_set_text(objects.temperature_label, std::to_string(temperature).c_str());
 }
 
 /*

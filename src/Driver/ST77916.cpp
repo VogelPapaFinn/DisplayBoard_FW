@@ -110,10 +110,10 @@ ST77916::ST77916()
 		return;
 	}
 
-	if (esp_lcd_panel_mirror(panelHandle_, true, true) != ESP_OK) {
-		ESP_LOGE(TAG, "Failed to rotate LCD panel");
-		return;
-	}
+	//if (esp_lcd_panel_mirror(panelHandle_, true, true) != ESP_OK) {
+	//	ESP_LOGE(TAG, "Failed to rotate LCD panel");
+	//	return;
+	//}
 
 	/* BL Logic */
 	ledcTimer_ = {.speed_mode = BL_PWM_MODE,
@@ -121,6 +121,7 @@ ST77916::ST77916()
 				  .timer_num = BL_PWM_TIMER,
 				  .freq_hz = BL_PWM_FQ_HZ,
 				  .clk_cfg = LEDC_AUTO_CLK};
+
 	if (ledc_timer_config(&ledcTimer_) != ESP_OK) {
 		ESP_LOGE(TAG, "Failed to initialize BL timer");
 		return;

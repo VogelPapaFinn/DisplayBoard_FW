@@ -13,7 +13,8 @@ public:
 	typedef enum
 	{
 		UNKNOWN,
-		REGISTRATION
+		REGISTRATION,
+		OPERATING
 	} TYPE;
 
 	/*
