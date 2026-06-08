@@ -53,7 +53,7 @@ public:
 	/*
 	 *	Private Callback functions
 	 */
-	IRAM_ATTR void flushToDisplay(lv_display_t* p_display, const lv_area_t* p_area, uint8_t* p_pxMap) const;
+	IRAM_ATTR void flushToDisplay(lv_display_t* p_display, lv_area_t* p_area, uint8_t* p_pxMap) const;
 
 private:
 	/*

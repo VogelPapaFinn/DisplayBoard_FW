@@ -25,6 +25,7 @@ constexpr gpio_num_t GPIO_D2 = GPIO_NUM_12;
 constexpr gpio_num_t GPIO_D3 = GPIO_NUM_11;
 constexpr gpio_num_t GPIO_CS = GPIO_NUM_8;
 constexpr gpio_num_t GPIO_RST = GPIO_NUM_9;
+constexpr gpio_num_t GPIO_TE = GPIO_NUM_18;
 
 constexpr st77916_vendor_config_t vendorConfig = {
 	.init_cmds = st77916InitSequence,
@@ -43,20 +44,48 @@ constexpr ledc_channel_t BL_PWM_CHANNEL = LEDC_CHANNEL_0;
 constexpr ledc_timer_bit_t BL_PWM_RES = LEDC_TIMER_8_BIT;
 
 /*
- *	Private Static
+ *	Private static ISR
  */
-static IRAM_ATTR bool onFrameDrawn(esp_lcd_panel_io_handle_t panelIo, esp_lcd_panel_io_event_data_t* edata,
-								   void* user_ctx)
+//! \brief This ISR is triggered when the physical display is ready to accept new data.
+//!
+//! It then notifies an internal task which moves the new data into the display buffer
+static IRAM_ATTR void teGpioIsr(void* arg)
 {
-	if (user_ctx == nullptr) {
-		return false;
+	if (arg == nullptr) {
+		return;
 	}
+	const auto taskHandle = static_cast<TaskHandle_t>(arg);
 
-	ST77916* instance = static_cast<ST77916*>(user_ctx);
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	vTaskNotifyGiveFromISR(taskHandle, &xHigherPriorityTaskWoken);
+	portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
 
-	instance->frameDrawnIsr();
+static IRAM_ATTR void drawToDisplayTask(void* param)
+{
+	if (param == nullptr) {
+		return;
+	}
+	const auto drawData = static_cast<DrawData*>(param);
 
-	return false;
+	while (true) {
+		// Wait until we get notified
+		if (!ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
+			continue;
+		}
+
+		if (!drawData->valid) {
+			continue;
+		}
+
+		// Draw data into the physical display buffer
+		esp_lcd_panel_draw_bitmap(drawData->panelHandle, drawData->area.x1, drawData->area.y1, drawData->area.x2 + 1,
+								  drawData->area.y2 + 1, drawData->pixelData);
+
+		drawData->valid = false;
+
+		lv_display_flush_ready(drawData->lvDisplay);
+	}
 }
 
 /*
@@ -64,7 +93,9 @@ static IRAM_ATTR bool onFrameDrawn(esp_lcd_panel_io_handle_t panelIo, esp_lcd_pa
  */
 ST77916::ST77916()
 {
-	/* Display initializations */
+	/*
+	 * Display initializations
+	 */
 	busConfig_ = {.data0_io_num = GPIO_D0,
 				  .data1_io_num = GPIO_D1,
 				  .sclk_io_num = GPIO_CLK,
@@ -79,7 +110,7 @@ ST77916::ST77916()
 	}
 
 	// LCD Panel IO
-	ioConfig_ = ST77916_PANEL_IO_QSPI_CONFIG(GPIO_CS, onFrameDrawn, this);
+	ioConfig_ = ST77916_PANEL_IO_QSPI_CONFIG(GPIO_CS, nullptr, this);
 	if (esp_lcd_new_panel_io_spi(SPI_HOST, &ioConfig_, &ioHandle_) != ESP_OK) {
 		ESP_LOGE(TAG, "Failed to create LCD panel IO handle");
 		return;
@@ -110,12 +141,9 @@ ST77916::ST77916()
 		return;
 	}
 
-	//if (esp_lcd_panel_mirror(panelHandle_, true, true) != ESP_OK) {
-	//	ESP_LOGE(TAG, "Failed to rotate LCD panel");
-	//	return;
-	//}
-
-	/* BL Logic */
+	/*
+	 * BL Logic
+	 */
 	ledcTimer_ = {.speed_mode = BL_PWM_MODE,
 				  .duty_resolution = BL_PWM_RES,
 				  .timer_num = BL_PWM_TIMER,
@@ -127,7 +155,6 @@ ST77916::ST77916()
 		return;
 	}
 
-	// 2. Kanal konfigurieren und mit GPIO und Timer verknüpfen
 	ledcChannel_ = {.gpio_num = GPIO_BL,
 					.speed_mode = BL_PWM_MODE,
 					.channel = BL_PWM_CHANNEL,
@@ -140,10 +167,42 @@ ST77916::ST77916()
 		return;
 	}
 
+	/*
+	 *	TE GPIO Logic
+	 */
+	if (xTaskCreate(drawToDisplayTask, "DrawToDisplatTask", 2048, &this->drawData_, 4, &drawToDisplayTaskHandle_) !=
+		pdPASS) {
+		ESP_LOGE(TAG, "Failed to create draw to display task");
+		esp_restart();
+		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
+	}
+
+	if (gpio_install_isr_service(ESP_INTR_FLAG_IRAM) != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to install the ISR service");
+		return;
+	}
+	if (gpio_set_direction(GPIO_TE, GPIO_MODE_INPUT) != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to set the GPIO direction of the TE GPIO");
+		return;
+	}
+	if (gpio_set_intr_type(GPIO_TE, GPIO_INTR_POSEDGE) != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to set the GPIO interruption type of the TE GPIO");
+		return;
+	}
+	drawData_.panelHandle = panelHandle_;
+	if (gpio_isr_handler_add(GPIO_TE, teGpioIsr, this->drawToDisplayTaskHandle_) != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to enable the ISR");
+		return;
+	}
+
 	initialized_ = true;
 }
 
-void ST77916::setLvglDisplay(lv_display_t* lvDisplay) { lvDisplay_ = lvDisplay; }
+void ST77916::setLvglDisplay(lv_display_t* lvDisplay)
+{
+	lvDisplay_ = lvDisplay;
+	drawData_.lvDisplay = lvDisplay_;
+}
 
 void ST77916::setBacklightLevel(uint8_t percent)
 {
@@ -159,19 +218,16 @@ void ST77916::setBacklightLevel(uint8_t percent)
 	ledc_update_duty(BL_PWM_MODE, BL_PWM_CHANNEL);
 }
 
-void ST77916::drawBitmap(const lv_area_t* p_area, const uint8_t* p_pxMap) const
+void ST77916::drawBitmap(const lv_area_t* p_area, uint8_t* p_pxMap)
 {
-	esp_lcd_panel_draw_bitmap(panelHandle_, p_area->x1, p_area->y1, p_area->x2 + 1, p_area->y2 + 1, p_pxMap);
+	drawData_.area = *p_area;
+	drawData_.pixelData = p_pxMap;
+	drawData_.valid = true;
 }
 
-/*
- *	Public Callback functions
- */
-void ST77916::frameDrawnIsr() const
+void ST77916::setRotated(const bool& rotated) const
 {
-	if (lvDisplay_ == nullptr) {
-		return;
+	if (esp_lcd_panel_mirror(panelHandle_, rotated, rotated) != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to rotate LCD panel");
 	}
-
-	lv_display_flush_ready(lvDisplay_);
 }

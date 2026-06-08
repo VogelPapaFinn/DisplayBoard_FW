@@ -65,7 +65,7 @@ static void mainEventTask(void* param)
  */
 extern "C" void app_main(void)
 {
-	// MUSS BESTEHEN BLEIBEN
+	// MUSS STEHEN BLEIBEN
 	vTaskDelay(pdMS_TO_TICKS(100));
 
 	core = Core::get();
@@ -73,7 +73,7 @@ extern "C" void app_main(void)
 	core->getCan()->registerRxCbQueue(&canQueueHandle);
 
 	TaskHandle_t canRxTaskHandle;
-	if (xTaskCreate(canRxTask, "MainCanRxTask", 2048 * 4, NULL, 2, &canRxTaskHandle) != pdPASS) {
+	if (xTaskCreate(canRxTask, "MainCanRxTask", 2048 * 4, NULL, 5, &canRxTaskHandle) != pdPASS) {
 		ESP_LOGE(TAG, "Failed to create CAN RX Task. Restarting...");
 		esp_restart();
 		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback

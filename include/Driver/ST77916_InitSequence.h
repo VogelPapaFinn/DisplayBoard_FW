@@ -3,8 +3,7 @@
 // espidf includes
 #include "esp_lcd_st77916.h"
 
-static const st77916_lcd_init_cmd_t st77916InitSequence[] =
-{
+static const st77916_lcd_init_cmd_t st77916InitSequence[] = {
 	{0xF0, (uint8_t[]){0x28}, 1, 0},
 	{0xF2, (uint8_t[]){0x28}, 1, 0},
 	{0x73, (uint8_t[]){0xF0}, 1, 0},
@@ -187,7 +186,10 @@ static const st77916_lcd_init_cmd_t st77916InitSequence[] =
 	{0xF3, (uint8_t[]){0x01}, 1, 0},
 	{0xF0, (uint8_t[]){0x00}, 1, 0},
 	{0x21, (uint8_t[]){0x00}, 1, 0},
-	{0x11, (uint8_t[]){0x00}, 1, 120 },
+	{0x11, (uint8_t[]){0x00}, 1, 120},
 	{0x29, (uint8_t[]){0x00}, 1, 0},
-	{0x36, (uint8_t[]){0x00}, 1, 0}
+	{0x36, (uint8_t[]){0x00}, 1, 0},
+	{0x29, (uint8_t[]){0x00}, 1, 0},
+	{0x36, (uint8_t[]){0x00}, 1, 0},
+	{0x35, (uint8_t[]){0x00}, 1, 0} // TEON (Tearing Effect Line ON), 0x00 für V-Blanking
 };

@@ -10,6 +10,21 @@
 #include "esp_lcd_types.h"
 #include "lvgl.h"
 
+/*
+ *	Struct
+ */
+typedef struct
+{
+	lv_display_t* lvDisplay = nullptr;
+	esp_lcd_panel_handle_t panelHandle = nullptr;
+	lv_area_t area;
+	uint8_t* pixelData = nullptr;
+	bool valid = false;
+} DrawData;
+
+/*
+ *	class
+ */
 class ST77916
 {
 public:
@@ -19,12 +34,9 @@ public:
 
 	static void setBacklightLevel(uint8_t percent);
 
-	void drawBitmap(const lv_area_t* p_area, const uint8_t* p_pxMap) const;
+	void drawBitmap(const lv_area_t* p_area, uint8_t* p_pxMap);
 
-	/*
-	 *	Public Callback functions
-	 */
-	void frameDrawnIsr() const;
+	void setRotated(const bool& rotated) const;
 
 private:
 	bool initialized_ = false;
@@ -38,6 +50,13 @@ private:
 	esp_lcd_panel_handle_t panelHandle_ = nullptr;
 
 	lv_display_t* lvDisplay_ = nullptr;
+
+	/*
+	 *	TE GPIO Stuff
+	 */
+	DrawData drawData_;
+
+	TaskHandle_t drawToDisplayTaskHandle_ = nullptr;
 
 	/*
 	 *	Backlight stuff

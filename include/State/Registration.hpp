@@ -22,6 +22,8 @@ private:
 
 	void confirmScreen() const;
 
+	void confirmRotation() const;
+
 	/*
 	 *	Private Variables
 	 */
