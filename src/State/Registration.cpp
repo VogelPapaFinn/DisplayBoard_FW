@@ -31,8 +31,6 @@ void Registration::handleCanFrame(const Can::Frame& frame)
 		return;
 	}
 
-	esp_rom_printf("Received Frame %s\n", frame.toString().c_str());
-
 	// Act depending on the function type
 	switch (frame.function) {
 		case CanFrame::SET_ID:
@@ -74,38 +72,38 @@ void Registration::handleCanFrame(const Can::Frame& frame)
 			break;
 
 		case CanFrame::SET_ROTATION:
-		{
-			if (frame.target != core_->getCanId()) {
-				return;
+			{
+				if (frame.target != core_->getCanId()) {
+					return;
+				}
+
+				if (frame.dataLengthCode <= 0) {
+					return;
+				}
+
+				// Save new rotation
+				(*jsonConfig_)["rotation"] = frame.data[0];
+				core_->saveConfig();
+
+				// Apply & confirm new rotation
+				core_->getDisplayDriver()->setRotated(frame.data[0]);
+				confirmRotation();
 			}
-
-			if (frame.dataLengthCode <= 0) {
-				return;
-			}
-
-			// Save new rotation
-			(*jsonConfig_)["rotation"] = frame.data[0];
-			core_->saveConfig();
-
-			// Apply & confirm new rotation
-			core_->getDisplayDriver()->setRotated(frame.data[0]);
-			confirmRotation();
-		}
 			break;
 
 		case CanFrame::REGISTRATION_COMPLETED:
-		{
-			if (frame.target != core_->getCanId()) {
-				return;
+			{
+				if (frame.target != core_->getCanId()) {
+					return;
+				}
+
+				core_->saveConfig();
+
+				// Build the GUI
+				Event event(Event::TYPE::SET_SCREEN);
+				event.intData = (*jsonConfig_)["screen"];
+				core_->getGui()->queueEventFromISR(event);
 			}
-
-			core_->saveConfig();
-
-			// Build the GUI
-			Event event(Event::TYPE::SET_SCREEN);
-			event.intData = (*jsonConfig_)["screen"];
-			core_->getGui()->queueEventFromISR(event);
-		}
 			break;
 
 		case CanFrame::WAKE_UP:
@@ -130,8 +128,6 @@ void Registration::handleCanFrame(const Can::Frame& frame)
  */
 void Registration::confirmNewId() const
 {
-	esp_rom_printf("Confirm ID!\n");
-
 	Can::Frame txFrame;
 
 	txFrame.sender = core_->getCanId();
@@ -145,8 +141,6 @@ void Registration::confirmNewId() const
 
 void Registration::registerAtMaster() const
 {
-	esp_rom_printf("Register at master!\n");
-
 	Can::Frame txFrame;
 
 	txFrame.sender = core_->getCanId();
@@ -164,8 +158,6 @@ void Registration::registerAtMaster() const
 
 void Registration::confirmScreen() const
 {
-	esp_rom_printf("Confirm Screen!\n");
-
 	Can::Frame txFrame;
 
 	txFrame.sender = core_->getCanId();
@@ -179,8 +171,6 @@ void Registration::confirmScreen() const
 
 void Registration::confirmRotation() const
 {
-	esp_rom_printf("Confirm rotation!\n");
-
 	Can::Frame txFrame;
 
 	txFrame.sender = core_->getCanId();

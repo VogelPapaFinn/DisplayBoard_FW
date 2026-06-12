@@ -15,7 +15,9 @@ struct Event
 		SET_SCREEN,		//!< Loads the specified screen in the GUI
 		WAKE_UP,		//!< Turns on the BL of the ST77916 and displays the GUI
 		REGISTRATION_FINISHED,
-		NEW_SENSOR_DATA
+		NEW_SENSOR_DATA,
+		JOIN_WIFI,
+		EXECUTE_UPDATE
 	} TYPE;
 
 	//! \brief Default constructor of the Event

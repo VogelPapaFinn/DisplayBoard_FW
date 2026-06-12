@@ -5,8 +5,9 @@
 
 // Project includes
 #include "Can.hpp"
-#include "Gui/Gui.hpp"
 #include "Config.hpp"
+#include "Gui/Gui.hpp"
+#include "WifiJoin.hpp"
 
 // espidf includes
 #include "ArduinoJson.hpp"
@@ -44,6 +45,8 @@ public:
 	//! \brief Writes all changes of the Config file to the spiffs partition
 	void saveConfig() const;
 
+	WifiJoin* getWifi();
+
 	/*
 	 *	CAN related functions
 	*/
@@ -74,6 +77,8 @@ private:
 
 	//! \brief The ptr to the Gui instance
 	Gui* gui_ = nullptr;
+
+	WifiJoin wifi_;
 
 	/*
 	 *	Private Functions

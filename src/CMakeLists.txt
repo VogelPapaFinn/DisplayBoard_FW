@@ -23,5 +23,5 @@ file(GLOB UI
 )
 
 idf_component_register(SRCS ${FILES} ${UI}
-        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_wifi can app_update esp_lcd_st77916 ArduinoJson filesystem
+        PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_wifi can app_update esp_lcd_st77916 ArduinoJson filesystem wifi esp_http_client esp_https_ota
         INCLUDE_DIRS "../include/" "." "../res/")

@@ -53,6 +53,11 @@ void Core::saveConfig() const {
 	config_->save();
 }
 
+WifiJoin* Core::getWifi()
+{
+	return &wifi_;
+}
+
 Can* Core::getCan() const {
 	return can_;
 }
