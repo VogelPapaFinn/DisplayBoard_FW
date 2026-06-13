@@ -16,13 +16,7 @@ private:
 	/*
 	 *	Private Functions
 	 */
-	void confirmNewId() const;
-
 	void registerAtMaster() const;
-
-	void confirmScreen() const;
-
-	void confirmRotation() const;
 
 	/*
 	 *	Private Variables

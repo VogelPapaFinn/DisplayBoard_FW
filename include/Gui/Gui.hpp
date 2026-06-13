@@ -32,7 +32,7 @@ public:
 
 	uint8_t getScreen() const;
 
-	void queueEventFromISR(const Event& event) const;
+	void queueEvent(const Event& event) const;
 
 	QueueHandle_t getEventQueue() const;
 

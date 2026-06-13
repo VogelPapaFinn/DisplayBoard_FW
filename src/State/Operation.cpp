@@ -29,7 +29,7 @@ void Operation::handleCanFrame(const Can::Frame& frame)
 					for (uint8_t i = 0; i < frame.dataLengthCode; i++) {
 						event.canData[i] = frame.data[i];
 					}
-					core_->getGui()->queueEventFromISR(event);
+					core_->getGui()->queueEvent(event);
 				}
 				break;
 
@@ -41,7 +41,7 @@ void Operation::handleCanFrame(const Can::Frame& frame)
 	 *	Wifi Frames
 	 */
 	else if (frame.group == CanFrame::WIFI) {
-		if (frame.sender != CAN_MASTER_ID && frame.sender != CAN_BROADCAST_ID) {
+		if (frame.sender != CAN_MASTER_ID) {
 			return;
 		}
 
@@ -50,8 +50,6 @@ void Operation::handleCanFrame(const Can::Frame& frame)
 			case CanFrame::WIFI::SET_MASTER_IP:
 				{
 					core_->getWifi()->setMasterIp({frame.data[0], frame.data[1], frame.data[2], frame.data[3]});
-
-					esp_rom_printf("New Master IP: %d.%d.%d.%d \n", frame.data[0], frame.data[1], frame.data[2], frame.data[3]);
 				}
 				break;
 
@@ -86,20 +84,22 @@ void Operation::handleCanFrame(const Can::Frame& frame)
 					Event event;
 					event.type = Event::JOIN_WIFI;
 
-					BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-					xQueueSendFromISR(mainEventQueue, &event, &xHigherPriorityTaskWoken);
+					xQueueSend(mainEventQueue, &event, portMAX_DELAY);
 				}
 				break;
 
 			case CanFrame::WIFI::EXECUTE_UPDATE:
 				{
+					if (frame.target != core_->getCanId()) {
+						return;
+					}
+
 					const auto mainEventQueue = core_->getMainEventQueue();
 
 					Event event;
 					event.type = Event::EXECUTE_UPDATE;
 
-					BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-					xQueueSendFromISR(mainEventQueue, &event, &xHigherPriorityTaskWoken);
+					xQueueSend(mainEventQueue, &event, portMAX_DELAY);
 				}
 				break;
 

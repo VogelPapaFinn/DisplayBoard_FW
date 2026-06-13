@@ -78,14 +78,28 @@ static IRAM_ATTR void drawToDisplayTask(void* param)
 			continue;
 		}
 
+		xSemaphoreTake(drawData->spiMutex, portMAX_DELAY);
+		*drawData->isDrawing = true;
+
 		// Draw data into the physical display buffer
 		esp_lcd_panel_draw_bitmap(drawData->panelHandle, drawData->area.x1, drawData->area.y1, drawData->area.x2 + 1,
 								  drawData->area.y2 + 1, drawData->pixelData);
 
-		drawData->valid = false;
+		xSemaphoreGive(drawData->spiMutex);
 
-		lv_display_flush_ready(drawData->lvDisplay);
+		drawData->valid = false;
 	}
+}
+
+static IRAM_ATTR bool onFrameDrawn(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t* edata,
+								   void* user_ctx)
+{
+	const auto st77916 = static_cast<ST77916*>(user_ctx);
+	if (st77916 != nullptr) {
+		*st77916->getDrawData()->isDrawing = false;
+		lv_display_flush_ready(st77916->getLvglDisplay());
+	}
+	return false;
 }
 
 /*
@@ -101,7 +115,7 @@ ST77916::ST77916()
 				  .sclk_io_num = GPIO_CLK,
 				  .data2_io_num = GPIO_D2,
 				  .data3_io_num = GPIO_D3,
-				  .max_transfer_sz = SOC_SPI_MAXIMUM_BUFFER_SIZE};
+				  .max_transfer_sz = 4092};
 
 	// SPI Bus
 	if (spi_bus_initialize(SPI_HOST, &busConfig_, SPI_DMA_CH_AUTO) != ESP_OK) {
@@ -111,6 +125,7 @@ ST77916::ST77916()
 
 	// LCD Panel IO
 	ioConfig_ = ST77916_PANEL_IO_QSPI_CONFIG(GPIO_CS, nullptr, this);
+	ioConfig_.on_color_trans_done = onFrameDrawn;
 	if (esp_lcd_new_panel_io_spi(SPI_HOST, &ioConfig_, &ioHandle_) != ESP_OK) {
 		ESP_LOGE(TAG, "Failed to create LCD panel IO handle");
 		return;
@@ -141,6 +156,10 @@ ST77916::ST77916()
 		return;
 	}
 
+	spiMutex_ = xSemaphoreCreateMutex();
+	drawData_.isDrawing = &isDrawing_;
+	drawData_.spiMutex = spiMutex_;
+
 	/*
 	 * BL Logic
 	 */
@@ -170,7 +189,7 @@ ST77916::ST77916()
 	/*
 	 *	TE GPIO Logic
 	 */
-	if (xTaskCreate(drawToDisplayTask, "DrawToDisplatTask", 2048, &this->drawData_, 4, &drawToDisplayTaskHandle_) !=
+	if (xTaskCreate(drawToDisplayTask, "DrawToDisplatTask", 4096, &this->drawData_, 4, &drawToDisplayTaskHandle_) !=
 		pdPASS) {
 		ESP_LOGE(TAG, "Failed to create draw to display task");
 		esp_restart();
@@ -204,6 +223,8 @@ void ST77916::setLvglDisplay(lv_display_t* lvDisplay)
 	drawData_.lvDisplay = lvDisplay_;
 }
 
+lv_display_t* ST77916::getLvglDisplay() const { return lvDisplay_; }
+
 void ST77916::setBacklightLevel(uint8_t percent)
 {
 	if (percent >= 100) {
@@ -218,6 +239,11 @@ void ST77916::setBacklightLevel(uint8_t percent)
 	ledc_update_duty(BL_PWM_MODE, BL_PWM_CHANNEL);
 }
 
+DrawData* ST77916::getDrawData()
+{
+	return &drawData_;
+}
+
 void ST77916::drawBitmap(const lv_area_t* p_area, uint8_t* p_pxMap)
 {
 	drawData_.area = *p_area;
@@ -227,7 +253,22 @@ void ST77916::drawBitmap(const lv_area_t* p_area, uint8_t* p_pxMap)
 
 void ST77916::setRotated(const bool& rotated) const
 {
+	if (spiMutex_ != nullptr) {
+		xSemaphoreTake(spiMutex_, portMAX_DELAY);
+
+		// Wait until frame was drawn
+		while (isDrawing_) {
+			vTaskDelay(pdMS_TO_TICKS(1));
+		}
+	}
+
+	// Rotate the display
 	if (esp_lcd_panel_mirror(panelHandle_, rotated, rotated) != ESP_OK) {
 		ESP_LOGE(TAG, "Failed to rotate LCD panel");
+	}
+
+	// Return the mutex
+	if (spiMutex_ != nullptr) {
+		xSemaphoreGive(spiMutex_);
 	}
 }

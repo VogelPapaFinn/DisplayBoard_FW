@@ -217,15 +217,12 @@ void Gui::setScreen(const uint8_t screen)
 
 uint8_t Gui::getScreen() const { return currentScreen_; }
 
-void Gui::queueEventFromISR(const Event& event) const
+void Gui::queueEvent(const Event& event) const
 {
 	BaseType_t woken = pdFALSE;
-	if (xQueueSendFromISR(eventQueue_, &event, &woken) == pdFALSE) {
+	if (xQueueSend(eventQueue_, &event, portMAX_DELAY) == pdFALSE) {
 		esp_rom_printf("FALSE\n");
 	}
-
-	// Execute Context Switch if needed (woken == pdTRUE)
-	portYIELD_FROM_ISR(woken);
 }
 
 QueueHandle_t Gui::getEventQueue() const { return eventQueue_; }

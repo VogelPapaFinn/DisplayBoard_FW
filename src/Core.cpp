@@ -92,6 +92,11 @@ Core::Core()
 
 	config_ = new Config(CONFIG_NAME);
 	jsonConfig_ = config_->getJson();
+	if (jsonConfig_ != nullptr) {
+		std::string str;
+		serializeJsonPretty(*jsonConfig_, str);
+		ESP_LOGI(TAG, "%s", str.c_str());
+	}
 
 	/*
 	 *	Frontend

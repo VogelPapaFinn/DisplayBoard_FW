@@ -2,6 +2,8 @@
 
 // C++ includes
 #include <vector>
+#include <bits/shared_ptr_atomic.h>
+#include <atomic>
 
 // espidf includes
 #include "driver/ledc.h"
@@ -20,6 +22,9 @@ typedef struct
 	lv_area_t area;
 	uint8_t* pixelData = nullptr;
 	bool valid = false;
+
+	std::atomic<bool>* isDrawing;
+	SemaphoreHandle_t spiMutex;
 } DrawData;
 
 /*
@@ -32,7 +37,11 @@ public:
 
 	void setLvglDisplay(lv_display_t* lvDisplay);
 
+	lv_display_t* getLvglDisplay() const;
+
 	static void setBacklightLevel(uint8_t percent);
+
+	DrawData* getDrawData();
 
 	void drawBitmap(const lv_area_t* p_area, uint8_t* p_pxMap);
 
@@ -50,6 +59,9 @@ private:
 	esp_lcd_panel_handle_t panelHandle_ = nullptr;
 
 	lv_display_t* lvDisplay_ = nullptr;
+
+	std::atomic<bool> isDrawing_{false};
+	SemaphoreHandle_t spiMutex_ = nullptr;
 
 	/*
 	 *	TE GPIO Stuff
