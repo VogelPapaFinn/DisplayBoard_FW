@@ -136,7 +136,7 @@ static void mainEventTask(void* param)
 extern "C" void app_main(void)
 {
 	// MUSS STEHEN BLEIBEN FUERS DEBUGGING
-	vTaskDelay(pdMS_TO_TICKS(500));
+	vTaskDelay(pdMS_TO_TICKS(100));
 
 	core = Core::get();
 	core->setMainEventQueue(mainEventQueueHandle);

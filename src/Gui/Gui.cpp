@@ -297,11 +297,17 @@ void Gui::setOilPressure(const bool& active) const
 	}
 }
 
-void Gui::setFuelLevel(const uint8_t& fuelLevelPercent) const
+void Gui::setFuelLevel(const uint8_t& fuelLevelPercent)
 {
 	if (objects.percent_label == nullptr) {
 		return;
 	}
+
+	// Check if it's the same value
+	if (fuelLevelPercent == lastFuelLevelValue_) {
+		return;
+	}
+	lastFuelLevelValue_ = fuelLevelPercent;
 
 	GuiLock lock(guiMutex_);
 
@@ -326,6 +332,27 @@ void Gui::setWaterTemperature(const int16_t& temperature) const
 	GuiLock lock(guiMutex_);
 
 	lv_label_set_text(objects.temperature_label, std::to_string(temperature).c_str());
+}
+
+void Gui::setInternalTemp(const float& temp) const
+{
+	lv_obj_t* label = nullptr;
+	if (currentScreen_ == TEMPERATURE) {
+		label = objects.temperature_esp_temp;
+	}
+	else if (currentScreen_ == SPEED) {
+		label = objects.speed_esp_temp;
+	}
+	else if (currentScreen_ == RPM) {
+		label = objects.rpm_esp_temp;
+	}
+
+	if (label == nullptr) {
+		return;
+	}
+
+	GuiLock lock(guiMutex_);
+	lv_label_set_text(label, (std::to_string(temp) + "°C").c_str());
 }
 
 /*

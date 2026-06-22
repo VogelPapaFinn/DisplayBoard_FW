@@ -1,11 +1,58 @@
 #include "State/Operation.hpp"
 
+// espidf includes
+#include "driver/temperature_sensor.h"
+
+/*
+ *	constexpr
+ */
+constexpr auto TAG = "Operation";
+
+/*
+ *	Can rx callback function
+ */
+static void espTempTask(void* param)
+{
+	temperature_sensor_handle_t sensor;
+	temperature_sensor_config_t sensorConfig = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-10, 80);
+
+	if (temperature_sensor_install(&sensorConfig, &sensor) != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to install internal temperature sensor");
+		vTaskDelete(nullptr);
+	}
+
+	if (temperature_sensor_enable(sensor) != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to enable internal temperature sensor");
+		vTaskDelete(nullptr);
+	}
+
+	auto core = Core::get();
+
+	while (true) {
+		float temp = 0.0f;
+		esp_err_t ret = temperature_sensor_get_celsius(sensor, &temp);
+
+		if (ret == ESP_OK) {
+			core->getGui()->setInternalTemp(temp);
+		}
+
+		vTaskDelay(pdMS_TO_TICKS(5000));
+	}
+}
+
 /*
  *	Public Function Implementations
  */
 Operation::Operation() : State(State::OPERATING) {}
 
-void Operation::enter() {}
+void Operation::enter()
+{
+	// Start task to measure and display the ESP32 temperature
+	if (xTaskCreate(espTempTask, "ESP32TempTask", 2048 * 3, NULL, 2, &espTempTask_) != pdPASS) {
+		ESP_LOGE(TAG, "Failed to create task to measure and display the ESP32 internal temperature");
+		return;
+	}
+}
 
 void Operation::handleCanFrame(const Can::Frame& frame)
 {

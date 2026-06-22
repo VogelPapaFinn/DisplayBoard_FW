@@ -46,9 +46,11 @@ public:
 
 	void setOilPressure(const bool& active) const;
 
-	void setFuelLevel(const uint8_t& fuelLevelPercent) const;
+	void setFuelLevel(const uint8_t& fuelLevelPercent);
 
 	void setWaterTemperature(const int16_t& temperature) const;
+
+	void setInternalTemp(const float& temp) const;
 
 	/*
 	 *	Private Callback functions
@@ -67,6 +69,8 @@ private:
 	uint16_t* frameBuffer2_ = nullptr;
 
 	uint8_t currentScreen_ = UNKOWN;
+
+	uint8_t lastFuelLevelValue_ = 0;
 
 	/*
 	 *	Thread Stuff

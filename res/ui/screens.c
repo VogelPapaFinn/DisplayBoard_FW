@@ -94,6 +94,16 @@ void create_screen_rpm() {
             lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_line_color(obj, lv_color_hex(0x19ff00), LV_PART_MAIN | LV_STATE_DEFAULT);
         }
+        {
+            // RpmEspTemp
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.rpm_esp_temp = obj;
+            lv_obj_set_pos(obj, 159, 38);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_vcr_osd_mono, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "0 °C");
+        }
     }
     
     tick_screen_rpm();
@@ -179,6 +189,16 @@ void create_screen_speed() {
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 360, 360);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        }
+        {
+            // SpeedEspTemp
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.speed_esp_temp = obj;
+            lv_obj_set_pos(obj, 159, 38);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_vcr_osd_mono, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "0 °C");
         }
     }
     
@@ -455,6 +475,16 @@ void create_screen_temperature() {
             lv_obj_set_pos(obj, 204, 240);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_image_set_src(obj, &img_oil_can);
+        }
+        {
+            // TemperatureEspTemp
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.temperature_esp_temp = obj;
+            lv_obj_set_pos(obj, 253, 98);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_color(obj, lv_color_hex(0x008f3c), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_vcr_osd_mono, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "0 °C");
         }
     }
     
