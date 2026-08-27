@@ -1,8 +1,11 @@
 #pragma once
 
 // Project includes
-#include "Can.hpp"
-#include "Core.hpp"
+#include "Events.hpp"
+#include "SystemContext.hpp"
+
+// C++ includes
+#include "vector"
 
 class State
 {
@@ -24,18 +27,15 @@ public:
 
 	virtual void enter() = 0;
 
-	virtual void handleCanFrame(const Can::Frame& frame) = 0;
+	TYPE getType() const;
 
 protected:
-	/*
-	 *	Instances
-	 */
-	Core* core_ = nullptr;
-
 	/*
 	 *	Private Variables
 	 */
 	TYPE type_ = UNKNOWN;
 
-	bool blocked_ = false;
+	SystemContext* sysCon_ = nullptr;
+
+	std::vector<std::tuple<esp_event_base_t, SYSTEM_EVENT_ID, esp_event_handler_instance_t>> eventHandlers_;
 };

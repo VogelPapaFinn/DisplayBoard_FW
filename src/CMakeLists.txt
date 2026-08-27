@@ -14,9 +14,12 @@ set(FILES
         "State/Registration.cpp"
         "State/Operation.cpp"
 
+        # Handlers
+        "Handler/WifiHandler.cpp"
+
         # Everything else
-        "Gui/Gui.cpp"
-        "Core.cpp"
+        "Gui.cpp"
+        "Events.cpp"
 )
 
 file(GLOB UI
@@ -27,3 +30,5 @@ file(GLOB UI
 idf_component_register(SRCS ${FILES} ${UI}
         PRIV_REQUIRES src driver spi_flash esp_psram lvgl esp_lcd esp_wifi can app_update esp_lcd_st77916 ArduinoJson filesystem wifi esp_http_client esp_https_ota
         INCLUDE_DIRS "../include/" "." "../res/")
+
+spiffs_create_partition_image(config "../config/" FLASH_INTO_PROJECT)

@@ -1,9 +1,8 @@
 #pragma once
 
 // C++ includes
-#include <vector>
-#include <bits/shared_ptr_atomic.h>
 #include <atomic>
+#include <bits/shared_ptr_atomic.h>
 
 // espidf includes
 #include "driver/ledc.h"

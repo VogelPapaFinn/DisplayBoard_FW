@@ -26,13 +26,11 @@ typedef struct _objects_t {
     lv_obj_t *left_indicator;
     lv_obj_t *obj1;
     lv_obj_t *obj2;
-    lv_obj_t *rpm_esp_temp;
     lv_obj_t *speed_label;
     lv_obj_t *obj3;
     lv_obj_t *right_indicator;
     lv_obj_t *obj4;
     lv_obj_t *obj5;
-    lv_obj_t *speed_esp_temp;
     lv_obj_t *temperature_label;
     lv_obj_t *obj6;
     lv_obj_t *obj7;
@@ -50,7 +48,6 @@ typedef struct _objects_t {
     lv_obj_t *percent_label;
     lv_obj_t *liter_label;
     lv_obj_t *oil_can;
-    lv_obj_t *temperature_esp_temp;
 } objects_t;
 
 extern objects_t objects;

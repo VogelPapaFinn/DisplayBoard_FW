@@ -1,25 +1,29 @@
 #pragma once
 
 // Project includes
+#include "Can.hpp"
 #include "State.hpp"
+#include "SystemContext.hpp"
 
 class Registration : public State
 {
 public:
-	Registration();
+	Registration(SystemContext* p_sysCon);
 
 	void enter() override;
-
-	void handleCanFrame(const Can::Frame& frame) override;
 
 private:
 	/*
 	 *	Private Functions
 	 */
+	void registerToEvents();
+
 	void registerAtMaster() const;
+
+	void handleCanFrame(const Can::Frame* p_frame);
 
 	/*
 	 *	Private Variables
 	 */
-	ArduinoJson::JsonDocument* jsonConfig_ = nullptr;
+	bool configured_ = false;
 };

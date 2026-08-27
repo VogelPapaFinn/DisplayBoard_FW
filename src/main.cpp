@@ -1,132 +1,95 @@
 // Project includes
-#include "Can.hpp"
-#include "Core.hpp"
-#include "Event.hpp"
+#include "Config.hpp"
+#include "Events.hpp"
+#include "Filesystem.hpp"
+#include "Gui.hpp"
+#include "Handler/WifiHandler.hpp"
 #include "State/Operation.hpp"
 #include "State/Registration.hpp"
-#include "wifi/WifiJoin.hpp"
+#include "WifiJoin.hpp"
 
 // espidf includes
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
+#include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
-#include <esp_log.h>
 
 /*
  *	constexpr
  */
 constexpr auto TAG = "main";
 
+constexpr gpio_num_t GPIO_CAN_RX = GPIO_NUM_39;
+constexpr gpio_num_t GPIO_CAN_TX = GPIO_NUM_40;
+
+constexpr auto CONFIG_NAME = "config.json";
+constexpr auto DEFAULT_CONFIG_NAME = "default/config.json";
+
 /*
  *	Private Static Variables
  */
-static Core* core = nullptr;
-
-static QueueHandle_t canQueueHandle = xQueueCreate(10, sizeof(Can::Frame));
-
-static QueueHandle_t mainEventQueueHandle = xQueueCreate(20, sizeof(Event));
-
-static std::shared_ptr<State> currentState;
+static std::shared_ptr<State> g_currentState;
 
 /*
- *	Can rx callback function
+ *	Helper functions
  */
-static void canRxTask(void* param)
+static void registerToEvents(SystemContext* p_sysCon)
 {
-	Can::Frame rxFrame;
-	while (true) {
-		if (xQueueReceive(canQueueHandle, &rxFrame, portMAX_DELAY) != pdPASS) {
-			continue;
-		}
+	/*
+	 *	Registration Completed
+	 */
+	esp_event_handler_instance_register(
+		SYSTEM_EVENT_BASE, REGISTRATION_COMPLETED,
+		[](void* p_systemContext, esp_event_base_t, int32_t, void*)
+		{
+			/*
+			 *	Get the system context
+			 */
+			if (p_systemContext == nullptr) {
+				return;
+			}
 
-		if (rxFrame.group == CanFrame::CONFIGURATION && rxFrame.function == CanFrame::CONFIGURATION::RESTART) {
-			esp_restart();
-		}
+			auto sysCon = static_cast<SystemContext*>(p_systemContext);
 
-		currentState->handleCanFrame(rxFrame);
-	}
+			/*
+			 *	Enter the operation state
+			 */
+			g_currentState = std::make_shared<Operation>(sysCon);
+			g_currentState->enter();
+		},
+		p_sysCon, nullptr);
 }
 
-static void mainEventTask(void* param)
+static void createAndOpenConfigFile(SystemContext& sysCon)
 {
-	Event event;
-	while (true) {
-		if (xQueueReceive(mainEventQueueHandle, &event, portMAX_DELAY) != pdPASS) {
-			continue;
+	/*
+	 *	Create default config, if config doesnt exist
+	 */
+	if (!sysCon.filesystem->doesFileExist(CONFIG_NAME, Filesystem::CONFIG_PARTITION)) {
+		sysCon.filesystem->createFile(CONFIG_NAME, Filesystem::CONFIG_PARTITION);
+
+		if (!sysCon.filesystem->doesFileExist(DEFAULT_CONFIG_NAME, Filesystem::CONFIG_PARTITION)) {
+			Config defaultConfig(&sysCon);
+			defaultConfig.open(DEFAULT_CONFIG_NAME);
+
+			Config newConfig(&sysCon);
+			newConfig.open(CONFIG_NAME);
+			*newConfig.getJson() = *defaultConfig.getJson();
+
+			newConfig.save();
 		}
+	}
 
-		// Act depending on the event
-		switch (event.type) {
-			case Event::REGISTRATION_FINISHED:
-				{
-					currentState = std::make_shared<Operation>();
-					currentState->enter();
-				}
-				break;
-
-			case Event::JOIN_WIFI:
-				{
-					auto wifi = core->getWifi();
-
-					// Connect to AP
-					wifi->callOnSuccess(
-						[]
-						{
-							Can::Frame txFrame;
-							txFrame.sender = core->getCanId();
-							;
-							txFrame.target = CAN_MASTER_ID;
-							txFrame.group = CanFrame::GROUP::WIFI;
-							txFrame.function = CanFrame::WIFI::JOIN_WIFI;
-							txFrame.answer = true;
-
-							Core::get()->getCan()->queueFrame(txFrame);
-						});
-
-					wifi->start();
-				}
-				break;
-
-			case Event::EXECUTE_UPDATE:
-				{
-					ESP_LOGI(TAG, "Starting OTA update");
-
-					// Get the master ip address
-					const auto& masterIp = core->getWifi()->getMasterIp();
-					std::string downloadPath = std::format("http://{}.{}.{}.{}/display-update.bin", masterIp[0], masterIp[1], masterIp[2], masterIp[3]);
-
-					esp_http_client_config_t config = {
-						.url = downloadPath.c_str(),
-						.timeout_ms = 5000,
-						.keep_alive_enable = true,
-					};
-
-					esp_https_ota_config_t otaConfig = {
-						.http_config = &config,
-					};
-
-					esp_err_t ret = esp_https_ota(&otaConfig);
-					if (ret == ESP_OK) {
-						ESP_LOGI(TAG, "OTA Update sucessful!");
-
-						Can::Frame txFrame;
-						txFrame.sender = core->getCanId();
-						txFrame.target = CAN_MASTER_ID;
-						txFrame.group = CanFrame::GROUP::WIFI;
-						txFrame.function = CanFrame::WIFI::EXECUTE_UPDATE;
-						txFrame.answer = 1;
-
-						Core::get()->getCan()->queueFrame(txFrame);
-					}
-					else {
-						ESP_LOGE(TAG, "OTA Update error: %s", esp_err_to_name(ret));
-					}
-				}
-				break;
-
-			default:;
-		}
+	/*
+	 *	Load the config file
+	 */
+	sysCon.config->open(CONFIG_NAME);
+	const auto& jsonConfig = sysCon.config->getJson();
+	if (jsonConfig != nullptr) {
+		std::string str;
+		serializeJsonPretty(*jsonConfig, str);
+		ESP_LOGI(TAG, "%s", str.c_str());
 	}
 }
 
@@ -135,28 +98,72 @@ static void mainEventTask(void* param)
  */
 extern "C" void app_main(void)
 {
-	// MUSS STEHEN BLEIBEN FUERS DEBUGGING
-	vTaskDelay(pdMS_TO_TICKS(100));
+	// NEEDED FOR DEBUGGING
+	vTaskDelay(pdMS_TO_TICKS(250));
 
-	core = Core::get();
-	core->setMainEventQueue(mainEventQueueHandle);
-	core->getCan()->registerRxCbQueue(&canQueueHandle);
+	/*
+	 *	Print startup logging header
+	 */
+	ESP_LOGI(TAG, "--- --- --- --- --- --- ---");
+	ESP_LOGI(TAG, "Startup");
 
-	TaskHandle_t canRxTaskHandle;
-	if (xTaskCreate(canRxTask, "MainCanRxTask", 2048 * 4, NULL, 5, &canRxTaskHandle) != pdPASS) {
-		ESP_LOGE(TAG, "Failed to create CAN RX Task. Restarting...");
+	/*
+	 *	Start the event loop
+	 */
+	if (esp_event_loop_create_default() != ESP_OK) {
+		ESP_LOGE(TAG, "Error creating default event loop. Rebooting...");
 		esp_restart();
-		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
 	}
 
-	if (xTaskCreate(mainEventTask, "MainEventTask", 4096, NULL, 2, NULL) != pdPASS) {
-		ESP_LOGE(TAG, "Failed to create main event task");
-		esp_restart();
-		vTaskDelay(pdMS_TO_TICKS(100000)); // Fallback
-	}
+	/*
+	 *	Create all necessary instances
+	 */
+	// System Context
+	SystemContext sysCon;
 
-	currentState = std::make_shared<Registration>();
-	currentState->enter();
+	// Can
+	Can can(GPIO_CAN_RX, GPIO_CAN_TX);
+	can.initialize();
+	can.enable();
+
+	// Filesystem
+	Filesystem fs(false, true, false);
+
+	// Config
+	Config config(&sysCon);
+
+	// Wifi
+	WifiJoin wifi(&sysCon);
+
+	// Display driver
+	Gui gui(&sysCon);
+
+	// Wifi Handler
+	WifiHandler wifiHandler(&sysCon);
+
+	/*
+	 *	Register the necessary events
+	 */
+	registerToEvents(&sysCon);
+
+	/*
+	 *	Build the SystemContext
+	 */
+	sysCon.can = &can;
+	sysCon.filesystem = &fs;
+	sysCon.config = &config;
+	sysCon.wifi = &wifi;
+
+	/*
+	 *	Ensure the config file exists and is loaded
+	 */
+	createAndOpenConfigFile(sysCon);
+
+	/*
+	 *	Create and enter the registration state
+	 */
+	g_currentState = std::make_shared<Registration>(&sysCon);
+	g_currentState->enter();
 
 	while (true) {
 		vTaskDelay(pdMS_TO_TICKS(1000));
