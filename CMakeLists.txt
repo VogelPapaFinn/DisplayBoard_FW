@@ -7,3 +7,5 @@ set(EXCLUDE_COMPONENTS "freemodbus" "mqtt" "coap" "libsodium" "wifi_provisioning
 set(EXTRA_COMPONENT_DIRS "src/" "../components/")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(DisplayBoard)
+
+add_compile_options(-Wmissing-field-initializers)

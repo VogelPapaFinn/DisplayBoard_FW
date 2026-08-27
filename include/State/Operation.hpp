@@ -2,6 +2,7 @@
 
 // Project includes
 #include "State.hpp"
+#include "Can.hpp"
 
 class Operation : public State
 {
@@ -15,4 +16,6 @@ private:
 	 *	Private Functions
 	 */
 	void registerToEvents();
+
+	void handleCanFrame(const Can::Frame* p_frame) const;
 };

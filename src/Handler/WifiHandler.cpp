@@ -66,8 +66,6 @@ WifiHandler::WifiHandler(SystemContext* p_sysCon)
 				case CanFrameGroups::WIFI::JOIN_WIFI:
 					handler->join();
 					break;
-				case CanFrameGroups::WIFI::EXECUTE_UPDATE:
-					break;
 				default:;
 			}
 		},
